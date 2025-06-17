@@ -1,0 +1,220 @@
+/* Component-specific styles */
+
+/* File uploader animations */
+@keyframes upload-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+.upload-progress {
+  animation: upload-pulse 1.5s ease-in-out infinite;
+}
+
+/* Loading spinner improvements */
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+/* File table hover effects */
+.file-row-hover {
+  transition: all 0.2s ease;
+}
+
+.file-row-hover:hover {
+  background-color: rgba(248, 250, 252, 0.8);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Status badge animations */
+.status-badge {
+  transition: all 0.2s ease;
+}
+
+.status-badge:hover {
+  transform: scale(1.05);
+}
+
+/* Form section transitions */
+.form-section-enter {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.form-section-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.form-section-exit {
+  opacity: 1;
+}
+
+.form-section-exit-active {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+/* Processing options card hover */
+.processing-options-card {
+  transition: all 0.2s ease;
+}
+
+.processing-options-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Page selector grid improvements */
+.page-selector-grid {
+  scroll-behavior: smooth;
+}
+
+.page-thumbnail {
+  transition: all 0.2s ease;
+}
+
+.page-thumbnail:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+.page-thumbnail.selected {
+  animation: page-select 0.3s ease;
+}
+
+@keyframes page-select {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1.02);
+  }
+}
+
+/* Error state styling */
+.error-state {
+  background: linear-gradient(
+    135deg,
+    rgba(239, 68, 68, 0.05) 0%,
+    rgba(239, 68, 68, 0.02) 100%
+  );
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+/* Success state styling */
+.success-state {
+  background: linear-gradient(
+    135deg,
+    rgba(34, 197, 94, 0.05) 0%,
+    rgba(34, 197, 94, 0.02) 100%
+  );
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+/* Processing state styling */
+.processing-state {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.05) 0%,
+    rgba(59, 130, 246, 0.02) 100%
+  );
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+/* Drag and drop improvements */
+.drag-over {
+  background: linear-gradient(
+    135deg,
+    rgba(59, 130, 246, 0.1) 0%,
+    rgba(59, 130, 246, 0.05) 100%
+  );
+  border-color: rgb(59, 130, 246);
+  animation: drag-pulse 1s ease-in-out infinite;
+}
+
+@keyframes drag-pulse {
+  0%,
+  100% {
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    border-color: rgb(59, 130, 246);
+  }
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .file-row-hover:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .page-thumbnail:hover {
+    transform: none;
+  }
+
+  .processing-options-card:hover {
+    box-shadow: inherit;
+  }
+}
+
+/* Focus improvements for accessibility */
+.focus-ring:focus {
+  outline: 2px solid rgb(59, 130, 246);
+  outline-offset: 2px;
+}
+
+.focus-ring:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .tutorial-highlight-minimal {
+    box-shadow: 0 0 0 3px rgb(59, 130, 246) !important;
+    background-color: rgba(59, 130, 246, 0.1) !important;
+  }
+
+  .drag-over {
+    border-width: 3px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,307 @@
+/* Document Editor Styles */
+
+/* Page styling for print-like appearance */
+.document-page {
+  box-shadow:
+    0 4px 6px -1px rgb(0 0 0 / 0.1),
+    0 2px 4px -2px rgb(0 0 0 / 0.1);
+  transition: box-shadow 0.2s ease;
+}
+
+.document-page:hover {
+  box-shadow:
+    0 10px 15px -3px rgb(0 0 0 / 0.1),
+    0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+/* Editor content styling */
+.ProseMirror {
+  outline: none;
+  font-family: "Times New Roman", serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1e293b;
+  cursor: text;
+}
+
+.ProseMirror p {
+  margin: 0.75em 0;
+}
+
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  line-height: 1.3;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+
+.ProseMirror h1 {
+  font-size: 2em;
+}
+.ProseMirror h2 {
+  font-size: 1.5em;
+}
+.ProseMirror h3 {
+  font-size: 1.25em;
+}
+.ProseMirror h4 {
+  font-size: 1.1em;
+}
+
+/* List styling */
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 1em 0;
+  padding-left: 2em;
+}
+
+.ProseMirror li {
+  margin: 0.25em 0;
+}
+
+.ProseMirror ul {
+  list-style-type: disc;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
+/* Blockquote styling */
+.ProseMirror blockquote {
+  border-left: 4px solid #cbd5e1;
+  padding-left: 1em;
+  margin: 1em 0;
+  font-style: italic;
+  color: #64748b;
+}
+
+/* Code styling */
+.ProseMirror code {
+  background-color: #f1f5f9;
+  padding: 0.2em 0.4em;
+  border-radius: 0.25em;
+  font-family: "Courier New", monospace;
+  font-size: 0.9em;
+}
+
+.ProseMirror pre {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5em;
+  padding: 1em;
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.ProseMirror pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.875em;
+}
+
+/* Image styling */
+.ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5em;
+  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+  margin: 1em 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ProseMirror img:hover {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Table styling */
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  overflow: hidden;
+  table-layout: fixed;
+}
+
+.ProseMirror table td,
+.ProseMirror table th {
+  min-width: 1em;
+  border: 1px solid #cbd5e1;
+  padding: 0.5em;
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+  word-wrap: break-word;
+}
+
+.ProseMirror table th {
+  background-color: #f8fafc;
+  font-weight: 600;
+  text-align: left;
+}
+
+.ProseMirror table .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(59, 130, 246, 0.15);
+  pointer-events: none;
+}
+
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 20;
+  background-color: #3b82f6;
+  pointer-events: none;
+}
+
+.ProseMirror table .tableWrapper {
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+/* Placeholder styling */
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #94a3b8;
+  pointer-events: none;
+  height: 0;
+  font-style: italic;
+}
+
+/* Selection styling */
+.ProseMirror ::selection {
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+/* Focus styling */
+.ProseMirror:focus {
+  outline: none;
+}
+
+/* Text alignment */
+.ProseMirror .text-left {
+  text-align: left;
+}
+
+.ProseMirror .text-center {
+  text-align: center;
+}
+
+.ProseMirror .text-right {
+  text-align: right;
+}
+
+.ProseMirror .text-justify {
+  text-align: justify;
+}
+
+/* Print styles */
+@media print {
+  .document-page {
+    box-shadow: none;
+    border: none;
+    margin: 0;
+    page-break-after: always;
+  }
+
+  .document-editor-container .editor-toolbar {
+    display: none;
+  }
+
+  .document-area {
+    background: white;
+    padding: 0;
+  }
+
+  .document-stats {
+    display: none;
+  }
+
+  .ProseMirror {
+    font-size: 12pt;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .document-page {
+    width: 100%;
+    max-width: 794px;
+    margin: 0 auto 2rem;
+  }
+
+  .editor-toolbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .editor-toolbar .flex {
+    flex-wrap: wrap;
+  }
+}
+
+/* Animation for page transitions */
+.document-page {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Toolbar styling enhancements */
+.editor-toolbar {
+  backdrop-filter: blur(10px);
+  background-color: rgba(255, 255, 255, 0.95);
+}
+
+.editor-toolbar .separator {
+  height: 2rem;
+  background-color: #e2e8f0;
+}
+
+/* Custom scrollbar for better document feel */
+.document-area::-webkit-scrollbar {
+  width: 8px;
+}
+
+.document-area::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.document-area::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.document-area::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
