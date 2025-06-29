@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { Footer } from "@/components/dashboard/Footer";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
 import {
   Select,
   SelectContent,
@@ -19,6 +20,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { realFileDownload } from "@/utils/realFileDownload";
+import { fetchMyFiles, MyFileData } from "@/utils/fetchMyFiles";
+import { fetchMyFileAsRealFile } from "@/services/fetchMyFileAsRealFile";
+
 import {
   Upload,
   FileText,
@@ -32,41 +36,7 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
-
-interface MyFile {
-  id: string;
-  name: string;
-  size: string;
-  dateCreated: string;
-}
-
-// Mock data for My Files
-const mockMyFiles: MyFile[] = [
-  {
-    id: "1",
-    name: "Contract_2024.pdf",
-    size: "2.1 MB",
-    dateCreated: "2024-12-15",
-  },
-  {
-    id: "2",
-    name: "Invoice_December.pdf",
-    size: "856 KB",
-    dateCreated: "2024-12-14",
-  },
-  {
-    id: "3",
-    name: "Report_Final.pdf",
-    size: "3.2 MB",
-    dateCreated: "2024-12-13",
-  },
-  {
-    id: "4",
-    name: "Presentation_Q4.pdf",
-    size: "5.1 MB",
-    dateCreated: "2024-12-12",
-  },
-];
+import { blob } from "stream/consumers";
 
 const ProtectDocument = () => {
   const [sourceType, setSourceType] = useState<"myfiles" | "upload">("myfiles");
@@ -83,6 +53,12 @@ const ProtectDocument = () => {
     downloadUrl?: string;
     message?: string;
   } | null>(null);
+
+  // Add pdfPages state to avoid compile error
+  const [pdfPages, setPdfPages] = useState<{ pageNumber: number; selected: boolean }[]>([]);
+
+  // Mock data for My Files
+  const [myFiles, setMyFiles] = useState<MyFileData[]>([]);
 
   // Advanced permissions
   const [disablePrinting, setDisablePrinting] = useState(false);
@@ -152,88 +128,161 @@ const ProtectDocument = () => {
     return true;
   };
 
+  // Helper to download and set file from My Files
+  const handleMyFileSelect = async (file: MyFileData) => {
+    try {
+      const token = localStorage.getItem("authToken") || "";
+      const realFile = await fetchMyFileAsRealFile(String(file.id), file.name, token);
+      setUploadedFile(realFile);
+      setProtectionResult(null);
+      toast.success(`${file.name} loaded from My Files.`);
+    } catch (error) {
+      console.error("❌ Error selecting file from My Files:", error);
+      toast.error("File selection failed: Could not load the file from My Files.");
+    }
+  };
+
   const handleProtectPDF = async () => {
-    if (!validateFileSelection() || !validatePasswords()) {
+  if (!validateFileSelection() || !validatePasswords()) {
+    return;
+  }
+
+  setIsProtecting(true);
+  setProtectionResult(null);
+
+  try {
+    const formData = new FormData();
+    formData.append("password", password);
+    formData.append("confirm_password", confirmPassword);
+
+    let url = "";
+if (sourceType === "upload" && uploadedFile) {
+  formData.append("file", uploadedFile);
+  url = "http://localhost:8000/free/upload/";
+} else if (sourceType === "myfiles" && selectedFile) {
+  const token = localStorage.getItem("authToken");
+  if (!token) throw new Error("Missing auth token");
+
+  // 🔽 Descărcăm fișierul real din My Files
+  const fileResponse = await fetch(`http://localhost:8000/myfiles/base/${selectedFile}/download/`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!fileResponse.ok) {
+    throw new Error("Failed to download selected file from My Files.");
+  }
+
+  const fileBlob = await fileResponse.blob();
+  const file = new File([fileBlob], "selected_file.pdf", { type: "application/pdf" });
+
+  // 🆕 Pregătim pentru trimitere ca și cum ar fi fost "upload"
+  formData.append("file", file);
+  url = "http://localhost:8000/free/upload/";
+} else {
+  toast.error("File not selected");
+  setIsProtecting(false);
+  return;
+}
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken") || ""}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to protect file");
+    }
+    const filename =
+      (sourceType === "upload" && uploadedFile?.name) ||
+      myFiles.find((f) => String(f.id) === selectedFile)?.name ||
+      "protected.pdf";
+
+    const fileBlob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(fileBlob);
+
+    setProtectionResult({
+      success: true,
+      fileName: filename,
+      downloadUrl,
+      message: "PDF protected successfully and ready for download.",
+    });
+
+    toast.success("PDF protected successfully!");
+    setPassword("");
+    setConfirmPassword("");
+  } catch (error) {
+    console.error("❌ Error protecting PDF:", error);
+    setProtectionResult({
+      success: false,
+      message: "Failed to protect PDF. Please try again.",
+    });
+    toast.error("Protection failed. Please try again.");
+  } finally {
+    setIsProtecting(false);
+  }
+};
+
+
+// Download handler for protected PDF
+const handleDownload = async () => {
+  try {
+    if (!protectionResult?.downloadUrl || !protectionResult?.fileName) {
+      toast.error("No protected PDF available for download.");
       return;
     }
 
-    setIsProtecting(true);
-    setProtectionResult(null);
+    const downloadUrl = protectionResult.downloadUrl;
+    const fileName = protectionResult.fileName.endsWith(".pdf")
+      ? protectionResult.fileName.replace(/\.pdf$/, "_protected.pdf")
+      : protectionResult.fileName + "_protected.pdf";
 
-    try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(downloadUrl);
 
-      const fileName =
-        sourceType === "myfiles"
-          ? mockMyFiles.find((f) => f.id === selectedFile)?.name ||
-            "document.pdf"
-          : uploadedFile?.name || "document.pdf";
+    toast.success("Protected PDF downloaded successfully.");
+  } catch (error) {
+    console.error("Download failed:", error);
+    toast.error("Failed to download protected file.");
+  }
+};
 
-      if (sourceType === "myfiles") {
-        // Save protected version to My Files
-        setProtectionResult({
-          success: true,
-          fileName,
-          message: "PDF successfully protected and saved to My Files.",
-        });
-      } else {
-        // Generate download for uploaded file
-        setProtectionResult({
-          success: true,
-          fileName,
-          downloadUrl: "#", // In real app, this would be the actual download URL
-          message: "PDF successfully protected and ready for download.",
-        });
-      }
 
-      toast.success("PDF protected successfully!");
-
-      // Reset form
-      setPassword("");
-      setConfirmPassword("");
-    } catch (error) {
-      setProtectionResult({
-        success: false,
-        message: "Failed to protect PDF. Please try again.",
-      });
-      toast.error("Protection failed. Please try again.");
-    } finally {
-      setIsProtecting(false);
-    }
-  };
-
-  const handleDownload = async () => {
-    const selectedFileName = getSelectedFileName();
-    if (!selectedFileName) {
-      toast.error("No file selected for protection");
-      return;
-    }
-
-    setIsDownloading(true);
-    try {
-      const filename = `protected_${selectedFileName.replace(".pdf", "")}_${new Date().toISOString().split("T")[0]}.pdf`;
-
-      console.log("🔽 Starting reliable protect PDF download:", filename);
-
-      // Use the real file download system
-      await realFileDownload("protect", filename);
-    } catch (error) {
-      console.error("❌ Protect download error:", error);
-    } finally {
-      setIsDownloading(false);
-    }
-  };
-
+// Helper to get selected file name
   const getSelectedFileName = () => {
     if (sourceType === "myfiles" && selectedFile) {
-      return mockMyFiles.find((f) => f.id === selectedFile)?.name;
+      return myFiles.find((f) => String(f.id) === selectedFile)?.name;
     }
     if (sourceType === "upload" && uploadedFile) {
       return uploadedFile.name;
     }
     return null;
   };
+
+  // Fetch My Files on mount (like SplitPDF)
+  useEffect(() => {
+    const fetchFiles = async () => {
+      try {
+        const token = localStorage.getItem("authToken") || "";
+        const files = await fetchMyFiles(token);
+        setMyFiles(files);
+      } catch (error) {
+        console.error("Failed to fetch My Files:", error);
+        toast.error("Failed to load My Files. Please try again.");
+      }
+    };
+    fetchFiles();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -304,8 +353,8 @@ const ProtectDocument = () => {
                           <SelectValue placeholder="Choose a file from My Files" />
                         </SelectTrigger>
                         <SelectContent>
-                          {mockMyFiles.map((file) => (
-                            <SelectItem key={file.id} value={file.id}>
+                          {myFiles.map((file) => (
+                            <SelectItem key={file.id} value={String(file.id)}>
                               <div className="flex items-center gap-2">
                                 <FileText className="h-4 w-4 text-red-600" />
                                 <span>{file.name}</span>
@@ -450,7 +499,7 @@ const ProtectDocument = () => {
                     <Checkbox
                       id="disablePrinting"
                       checked={disablePrinting}
-                      onCheckedChange={setDisablePrinting}
+                      onCheckedChange={(checked) => setDisablePrinting(checked === true)}
                     />
                     <Label htmlFor="disablePrinting" className="text-sm">
                       Disable printing
@@ -460,7 +509,7 @@ const ProtectDocument = () => {
                     <Checkbox
                       id="disableCopying"
                       checked={disableCopying}
-                      onCheckedChange={setDisableCopying}
+                      onCheckedChange={(checked) => setDisableCopying(checked === true)}
                     />
                     <Label htmlFor="disableCopying" className="text-sm">
                       Disable copying text
@@ -470,7 +519,7 @@ const ProtectDocument = () => {
                     <Checkbox
                       id="disableEditing"
                       checked={disableEditing}
-                      onCheckedChange={setDisableEditing}
+                      onCheckedChange={(checked) => setDisableEditing(checked === true)}
                     />
                     <Label htmlFor="disableEditing" className="text-sm">
                       Disable editing
@@ -497,7 +546,7 @@ const ProtectDocument = () => {
                         </p>
                         <p className="text-sm text-slate-500">
                           {sourceType === "myfiles"
-                            ? mockMyFiles.find((f) => f.id === selectedFile)
+                            ? myFiles.find((f) => f.id === Number(selectedFile))
                                 ?.size
                             : uploadedFile
                               ? `${(uploadedFile.size / 1024 / 1024).toFixed(2)} MB`
@@ -598,3 +647,14 @@ const ProtectDocument = () => {
 };
 
 export default ProtectDocument;
+function setPdfPages(arg0: undefined[]) {
+  throw new Error("Function not implemented.");
+}
+
+function handlePageCount(realFile: File) {
+  throw new Error("Function not implemented.");
+}
+
+function setShowMyFilesModal(arg0: boolean) {
+  throw new Error("Function not implemented.");
+}

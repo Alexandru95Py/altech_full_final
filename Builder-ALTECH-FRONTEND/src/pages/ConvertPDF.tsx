@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { realFileDownload } from "@/utils/realFileDownload";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
 import { HelpTooltip, toolHelpContent } from "@/components/ui/help-tooltip";
 import {
   Upload,
@@ -36,6 +37,7 @@ import {
   AlignLeft,
   FileImage,
 } from "lucide-react";
+import { fetchMyFiles, MyFileData } from "@/utils/fetchMyFiles";
 
 type ConvertFormat = "docx" | "pptx" | "jpg" | "png" | "txt";
 
@@ -48,31 +50,6 @@ interface ConversionOption {
   bgColor: string;
   useCase: string;
 }
-
-// Mock data for My Files
-const mockMyFiles = [
-  {
-    id: "1",
-    name: "Business_Report_2024.pdf",
-    size: "3.2 MB",
-    pages: 18,
-    uploadDate: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Presentation_Slides.pdf",
-    size: "8.7 MB",
-    pages: 32,
-    uploadDate: "2024-01-14",
-  },
-  {
-    id: "3",
-    name: "Document_Scans.pdf",
-    size: "12.1 MB",
-    pages: 24,
-    uploadDate: "2024-01-12",
-  },
-];
 
 export default function ConvertPDF() {
   const navigate = useNavigate();
@@ -91,6 +68,13 @@ export default function ConvertPDF() {
   const [showMyFilesModal, setShowMyFilesModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
+  const [convertedBlob, setConvertedBlob] = useState<Blob | null>(null);
+  const [convertedFilename, setConvertedFilename] = useState<string | null>(null);
+  const [convertedContentType, setConvertedContentType] = useState<string>("application/pdf");
+  const [myFiles, setMyFiles] = useState<MyFileData[]>([]);
+  const [myFilesLoading, setMyFilesLoading] = useState(false);
+  const [myFilesError, setMyFilesError] = useState<string | null>(null);
+  const [pageCount, setPageCount] = useState<number | null>(null);
 
   // Conversion format options
   const conversionOptions: ConversionOption[] = [
@@ -146,60 +130,93 @@ export default function ConvertPDF() {
     (option) => option.format === selectedFormat,
   );
 
-  // Handle file upload
-  const handleFileUpload = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  // Fetch My Files when modal opens
+  useEffect(() => {
+    if (showMyFilesModal) {
+      const fetchFiles = async () => {
+        setMyFilesLoading(true);
+        setMyFilesError(null);
+        const token = localStorage.getItem("authToken");
+        if (!token) {
+          setMyFilesError("Missing auth token");
+          setMyFilesLoading(false);
+          return;
+        }
+        try {
+          const files = await fetchMyFiles(token);
+          setMyFiles(files);
+        } catch (e: any) {
+          setMyFilesError(e.message || "Failed to fetch My Files");
+        } finally {
+          setMyFilesLoading(false);
+        }
+      };
+      fetchFiles();
+    }
+  }, [showMyFilesModal]);
 
-    const file = files[0];
-
-    // Validate file type
-    if (file.type !== "application/pdf") {
+  // Get real page count from backend
+  const handlePageCount = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("http://localhost:8000/myfiles/count-pages/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!response.ok) throw new Error("Failed to get page count");
+      const data = await response.json();
+      setPageCount(data.pages);
+    } catch (error) {
+      setPageCount(null);
       toast({
-        title: "Invalid file type",
-        description: "Please upload a PDF file",
+        title: "Page count failed",
+        description: "Could not retrieve the number of pages in the PDF.",
         variant: "destructive",
       });
-      return;
     }
-
-    // Validate file size (max 100MB)
-    if (file.size > 100 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Please upload a PDF file smaller than 100MB",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsUploading(true);
-
-    // Simulate upload processing
-    setTimeout(() => {
-      setUploadedFile(file);
-      setIsUploading(false);
-
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} is ready for conversion`,
-      });
-    }, 2000);
   };
 
-  // Handle My Files selection
-  const handleMyFileSelect = (file: (typeof mockMyFiles)[0]) => {
-    const mockFile = new File([], file.name, { type: "application/pdf" });
-    Object.defineProperty(mockFile, "size", {
-      value: parseFloat(file.size.replace(/[^\d.]/g, "")) * 1024 * 1024,
-    });
+  // Handle file upload from device
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (file.type !== "application/pdf") {
+      toast({ title: "Invalid file type", description: "Please upload a PDF file", variant: "destructive" });
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Please upload a PDF file smaller than 100MB", variant: "destructive" });
+      return;
+    }
+    setIsUploading(true);
+    setUploadedFile(file);
+    await handlePageCount(file);
+    setIsUploading(false);
+    toast({ title: "File uploaded successfully", description: `${file.name} is ready for conversion` });
+  };
 
-    setUploadedFile(mockFile);
-    setShowMyFilesModal(false);
-
-    toast({
-      title: "File selected",
-      description: `${file.name} is ready for conversion`,
-    });
+  // Handle My Files selection (real backend)
+  const handleMyFileSelect = async (file: MyFileData) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) throw new Error("Missing auth token");
+      const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to download selected file from My Files.");
+      const blob = await response.blob();
+      const realFile = new File([blob], file.name, { type: "application/pdf" });
+      setUploadedFile(realFile);
+      setShowMyFilesModal(false);
+      await handlePageCount(realFile);
+      toast({ title: "File selected", description: `${file.name} is ready for conversion` });
+    } catch (error) {
+      toast({ title: "Failed to load file", description: "Could not load file from My Files.", variant: "destructive" });
+    }
   };
 
   // Handle drag and drop
@@ -221,69 +238,136 @@ export default function ConvertPDF() {
 
   // Handle conversion
   const handleConvert = async () => {
-    if (!uploadedFile) return;
+  if (!uploadedFile) return;
 
-    setIsProcessing(true);
-    setProcessingProgress(0);
+  setIsProcessing(true);
+  setProcessingProgress(0);
 
-    // Simulate conversion progress
-    const progressInterval = setInterval(() => {
-      setProcessingProgress((prev) => {
-        if (prev >= 95) {
-          clearInterval(progressInterval);
-          return 95;
-        }
-        return prev + Math.random() * 15;
-      });
-    }, 400);
+  const formData = new FormData();
+  formData.append("file", uploadedFile);
+  formData.append("target_format", selectedFormat);
 
-    // Simulate processing time based on format
-    const processingTime =
-      selectedFormat === "txt"
-        ? 2000
-        : selectedFormat === "docx"
-          ? 4000
-          : selectedFormat === "pptx"
-            ? 5000
-            : 6000;
+  try {
+    const response = await fetch("http://localhost:8000/convert/api/convert/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken") || ""}`,
+      },
+      body: formData,
+    });
 
-    setTimeout(() => {
-      clearInterval(progressInterval);
-      setProcessingProgress(100);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ Server Error Response:", errorText);
+      throw new Error(`Server responded with ${response.status}`);
+    }
 
-      setTimeout(() => {
-        setIsProcessing(false);
-        setIsProcessed(true);
+    const blob = await response.blob();
 
-        toast({
-          title: "Conversion completed!",
-          description: `Your PDF has been converted to ${selectedOption?.title}`,
-        });
-      }, 500);
-    }, processingTime);
-  };
+    const contentDisposition = response.headers.get("Content-Disposition");
+    const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch?.[1] || `converted.${selectedFormat}`;
+
+    const contentType =
+      response.headers.get("Content-Type") || "application/octet-stream";
+
+    // Setăm rezultatul în state pentru download sau salvare ulterioară
+    setConvertedBlob(blob);
+    setConvertedFilename(filename);
+    setConvertedContentType(contentType);
+    setIsProcessed(true);
+
+    toast({
+      title: "Conversion completed!",
+      description: `Your PDF has been converted to ${selectedOption?.title}`,
+    });
+  } catch (error) {
+    console.error("❌ Conversion error:", error);
+    toast({
+      title: "Conversion failed",
+      description: "An error occurred while converting the file.",
+      variant: "destructive",
+    });
+  } finally {
+    setProcessingProgress(100);
+    setIsProcessing(false);
+  }
+};
+
 
   // Handle download/save
   const handleDownload = async () => {
-    if (!uploadedFile) return;
+  if (!convertedBlob || !convertedFilename) {
+    toast({
+      title: "Nothing to download",
+      description: "You must first convert a PDF before downloading",
+      variant: "destructive",
+    });
+    return;
+  }
 
-    setIsDownloading(true);
-    try {
-      const filename = `converted_${uploadedFile.name.replace(/\.[^/.]+$/, "")}_${new Date().toISOString().split("T")[0]}.pdf`;
-      await realFileDownload("convert", filename);
-    } catch (error) {
-      console.error("❌ Convert download error:", error);
-    } finally {
-      setIsDownloading(false);
+  setIsDownloading(true);
+  try {
+    const url = window.URL.createObjectURL(convertedBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", convertedFilename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("❌ Convert download error:", error);
+    toast({
+      title: "Download failed",
+      description: "Could not download the converted file",
+      variant: "destructive",
+    });
+  } finally {
+    setIsDownloading(false);
+  }
+};
+
+const handleSaveToMyFiles = async () => {
+  const token = localStorage.getItem("authToken");
+  
+  if (!convertedBlob || !convertedFilename || !token) {
+    toast({
+      title: "Save Failed",
+      description: "Conversion required before saving.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  try {
+    // 🔁 Creează fișier real din blob (necesar pentru upload corect)
+    const fileToSave = new File([convertedBlob], convertedFilename, {
+      type: convertedContentType,
+    });
+
+    // ✅ Folosește funcția utilitară reală
+    const response = await savePDFToMyFiles(fileToSave, token);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Upload failed:", errorText);
+      throw new Error("Upload failed");
     }
-  };
 
-  const handleSaveToMyFiles = () => {
     toast({
       title: "Saved to My Files",
-      description: `Your converted ${selectedOption?.title} has been saved to My Files`,
+      description: "Your converted file has been saved successfully.",
     });
-  };
+  } catch (error) {
+    console.error("Save error:", error);
+    toast({
+      title: "Save Failed",
+      description: "Could not save to My Files.",
+      variant: "destructive",
+    });
+  }
+};
 
   // Remove uploaded file and start over
   const removeFile = () => {
@@ -433,7 +517,7 @@ export default function ConvertPDF() {
                         </p>
                         <p className="text-sm text-slate-500">
                           {(uploadedFile.size / (1024 * 1024)).toFixed(1)} MB •
-                          Ready to convert
+                          {pageCount !== null ? `${pageCount} pages • ` : ""}Ready to convert
                         </p>
                       </div>
                       <Badge
@@ -642,26 +726,33 @@ export default function ConvertPDF() {
               Select a PDF file from your saved documents to convert
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
+            {myFilesLoading ? (
+              <div className="text-center text-slate-500">Loading...</div>
+            ) : myFilesError ? (
+              <div className="text-center text-red-500">{myFilesError}</div>
+            ) : myFiles.length === 0 ? (
+              <div className="text-center text-slate-500">No files found.</div>
+            ) : (
+              myFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
+                  onClick={() => handleMyFileSelect(file)}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-8 w-8 text-red-500" />
+                    <div>
+                      <h3 className="font-medium text-slate-900">{file.name}</h3>
+                      <p className="text-sm text-slate-500">
+                        {file.size} • {file.pages} pages
+                      </p>
+                    </div>
                   </div>
+                  <Badge variant="outline">Select</Badge>
                 </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>

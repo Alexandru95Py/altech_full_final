@@ -1,0 +1,47 @@
+# Python
+*.pyc
+__pycache__/
+
+# SQLite
+db.sqlite3
+
+# Virtual environments
+venv/
+ENV/
+.env/
+.env
+*.env
+
+# Node/Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Editor/IDE
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Migrations (optional)
+**/migrations/
+!**/migrations/__init__.py
+
+# Media/User uploads
+media/
+
+# Test/Backup/Log files
+htmlcov/
+*.cover
+.coverage
+*.log
+.pytest_cache/
+*.bak
+
+# OS/Backup
+Thumbs.db

@@ -31,9 +31,8 @@ const CreatePDF = () => {
         textContent.slice(0, 50) + (textContent.length > 50 ? "..." : "") ||
         "Untitled Document";
 
-      const response = await djangoAPI.createBasicPDF({
+      const response = await djangoAPI.createBasicPDF(content, {
         title,
-        content,
         format: "A4",
       });
 

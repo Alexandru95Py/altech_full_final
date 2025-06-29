@@ -359,13 +359,22 @@ const createAPIInterface = () => {
       password: string;
       firstName: string;
       lastName: string;
-    }) =>
-      apiClient.post<AuthResponse>("/auth/register/", {
-        email: userData.email,
-        password: userData.password,
-        first_name: userData.firstName,
-        last_name: userData.lastName,
-      }),
+    }) => {
+      // Temporarily remove Authorization header for registration
+      const prevAuth = apiClient.getAuthHeader();
+      apiClient.clearAuthToken();
+      return apiClient
+        .post<AuthResponse>("/auth/register/", {
+          email: userData.email,
+          password: userData.password,
+          first_name: userData.firstName,
+          last_name: userData.lastName,
+        })
+        .finally(() => {
+          // Restore previous Authorization header if it existed
+          if (prevAuth) apiClient.setAuthToken(prevAuth.replace('Bearer ', ''));
+        });
+    },
 
     getUserProfile: () => apiClient.get<UserProfile>("/auth/me/"),
 
@@ -382,9 +391,12 @@ const createAPIInterface = () => {
 
     updateProfileImage: (file: File) => apiClient.uploadProfileImage(file),
 
+    verifyEmailCode: (email: string, code: string) =>
+      apiClient.post("/auth/verify-email/", { email, code }),
+
     // File Management endpoints
     uploadFile: (file: File, onProgress?: (progress: number) => void) =>
-      apiClient.uploadFile("/api/myfiles/base/upload/", file, onProgress),
+      apiClient.uploadFile("/api/myfiles/base/", file, onProgress),
 
     getFiles: () => apiClient.get<FileItem[]>("/api/myfiles/base/"),
 

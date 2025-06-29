@@ -9,34 +9,36 @@ import { toast } from "sonner";
  * ULTRA SIMPLE download function - creates text file and downloads it
  */
 export const realFileDownload = async (
-  operation: string,
-  filename?: string,
+  operationOrBlob: string | Blob,
+  filename?: string
 ): Promise<void> => {
   try {
-    console.log("🔽 SIMPLE DOWNLOAD STARTING:", operation);
+    console.log("🔽 SIMPLE DOWNLOAD STARTING:", operationOrBlob);
 
     const finalFilename =
-      filename || `${operation}_${new Date().toISOString().split("T")[0]}.txt`;
+      filename ||
+      (typeof operationOrBlob === "string"
+        ? `${operationOrBlob}_${new Date().toISOString().split("T")[0]}.txt`
+        : `download_${new Date().toISOString().split("T")[0]}.bin`);
 
-    // Show toast
-    toast.info("Downloading file...", {
-      description: "Starting download...",
-    });
-
-    // Create simple text content for now
-    const content = `ALTech PDF Tools - ${operation.toUpperCase()}
+    let blob;
+    if (typeof operationOrBlob === "string") {
+      // Create text content blob
+      const content = `ALTech PDF Tools - ${operationOrBlob.toUpperCase()}
 File: ${finalFilename}
 Generated: ${new Date().toString()}
-Operation: ${operation}
+Operation: ${operationOrBlob}
 
 This is a test download from ALTech PDF Tools.
 The download system is working correctly!
 
-Browser: ${navigator.userAgent}
-`;
+Browser: ${navigator.userAgent}`;
+      blob = new Blob([content], { type: "text/plain" });
+    } else {
+      // Use provided Blob directly
+      blob = operationOrBlob;
+    }
 
-    // Create blob
-    const blob = new Blob([content], { type: "text/plain" });
     console.log("✅ Blob created, size:", blob.size);
 
     // Create URL

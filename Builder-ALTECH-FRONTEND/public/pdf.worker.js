@@ -1,0 +1,1 @@
+importScripts("https://unpkg.com/pdfjs-dist@3.5.141/build/pdf.worker.min.js");

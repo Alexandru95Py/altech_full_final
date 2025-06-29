@@ -1,25 +1,28 @@
-import { useState, createContext, useContext, useEffect } from "react";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
+import { useState, createContext, useContext } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+
 import { SupportModal } from "@/components/dashboard/SupportModal";
-import { Tutorial } from "@/components/tutorial/Tutorial";
-import {
-  TutorialProvider,
-  useTutorialContext,
-} from "@/contexts/TutorialContext";
-import { StorageProvider } from "@/contexts/StorageContext";
-import { ErrorProvider } from "@/contexts/ErrorContext";
 import { ErrorFallback } from "@/components/error/ErrorFallback";
+import { Tutorial } from "@/components/tutorial/Tutorial";
 import { MockModeBanner } from "@/components/shared/MockModeBanner";
-// Import download test for debugging
+
+import { AuthProvider } from "@/contexts/authContext";
+import { StorageProvider } from "@/contexts/StorageContext";
+import { TutorialProvider, useTutorialContext } from "@/contexts/TutorialContext";
+import { ErrorProvider } from "@/contexts/ErrorContext";
+
+// Debug utils
 import "@/utils/downloadTest";
 import "@/utils/simpleDownloadTest";
+
+// Pages
 import Index from "./pages/Index";
 import Tools from "./pages/Tools";
-import MyFiles from "./pages/MyFiles/index";
+import MyFiles from "./pages/MyFiles";
 import FillSign from "./pages/FillSign";
 import ProtectDocument from "./pages/ProtectDocument";
 import CreatePDF from "./pages/CreatePDF";
@@ -33,7 +36,6 @@ import TermsOfService from "./pages/TermsOfService";
 import SplitPDF from "./pages/SplitPDF";
 import MergePDF from "./pages/MergePDF";
 import ReorderPDF from "./pages/ReorderPDF";
-import GenerateCV from "./pages/GenerateCV";
 import CompressPDF from "./pages/CompressPDF";
 import ExtractPages from "./pages/ExtractPages";
 import RotatePages from "./pages/RotatePages";
@@ -41,14 +43,15 @@ import ConvertPDF from "./pages/ConvertPDF";
 import DeletePages from "./pages/DeletePages";
 import BatchProcessing from "./pages/BatchProcessing";
 import SecurityPrivacy from "./pages/SecurityPrivacy";
-import NotFound from "./pages/NotFound";
+import GenerateCV from "./pages/GenerateCV";
 import TestPage from "./pages/TestPage";
+import VerifyEmail from "./pages/VerifyEmail";
+import NotFound from "./pages/NotFound";
 
-// Create context for global support modal
+// Global support modal context
 interface SupportContextType {
   openSupportModal: () => void;
 }
-
 const SupportContext = createContext<SupportContextType | undefined>(undefined);
 
 export const useSupportModal = () => {
@@ -93,11 +96,10 @@ const AppContent = () => {
         <Route path="/security" element={<SecurityPrivacy />} />
         <Route path="/generate-cv" element={<GenerateCV />} />
         <Route path="/test" element={<TestPage />} />
-        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {/* Tutorial Component */}
       <Tutorial
         isVisible={showTutorial}
         onComplete={completeTutorial}
@@ -110,34 +112,31 @@ const AppContent = () => {
 const App = () => {
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
 
-  const openSupportModal = () => {
-    setIsSupportModalOpen(true);
-  };
-
-  const closeSupportModal = () => {
-    setIsSupportModalOpen(false);
-  };
+  const openSupportModal = () => setIsSupportModalOpen(true);
+  const closeSupportModal = () => setIsSupportModalOpen(false);
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <StorageProvider>
-          <TutorialProvider>
-            <ErrorProvider>
-              <SupportContext.Provider value={{ openSupportModal }}>
-                <Toaster />
-                <Sonner />
-                <BrowserRouter>
-                  <AppContent />
-                </BrowserRouter>
-                <SupportModal
-                  isOpen={isSupportModalOpen}
-                  onClose={closeSupportModal}
-                />
-                <ErrorFallback />
-              </SupportContext.Provider>
-            </ErrorProvider>
-          </TutorialProvider>
+          <AuthProvider>
+            <TutorialProvider>
+              <ErrorProvider>
+                <SupportContext.Provider value={{ openSupportModal }}>
+                  <Toaster />
+                  <Sonner />
+                  <BrowserRouter>
+                    <AppContent />
+                  </BrowserRouter>
+                  <SupportModal
+                    isOpen={isSupportModalOpen}
+                    onClose={closeSupportModal}
+                  />
+                  <ErrorFallback />
+                </SupportContext.Provider>
+              </ErrorProvider>
+            </TutorialProvider>
+          </AuthProvider>
         </StorageProvider>
       </TooltipProvider>
     </QueryClientProvider>

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
@@ -36,6 +36,8 @@ import {
   Copy,
 } from "lucide-react";
 import { HelpTooltip, toolHelpContent } from "@/components/ui/help-tooltip";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
+import { fetchMyFiles, MyFileData } from "@/utils/fetchMyFiles";
 
 interface PDFPage {
   id: string;
@@ -44,39 +46,6 @@ interface PDFPage {
   thumbnail: string;
   markedForDeletion: boolean;
 }
-
-// Mock data for My Files
-type MockMyFile = {
-  id: string;
-  name: string;
-  size: string;
-  pages: number;
-  uploadDate: string;
-};
-
-const mockMyFiles: MockMyFile[] = [
-  {
-    id: "1",
-    name: "Draft_Document.pdf",
-    size: "5.4 MB",
-    pages: 28,
-    uploadDate: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Meeting_Notes.pdf",
-    size: "2.8 MB",
-    pages: 12,
-    uploadDate: "2024-01-14",
-  },
-  {
-    id: "3",
-    name: "Report_With_Errors.pdf",
-    size: "9.2 MB",
-    pages: 35,
-    uploadDate: "2024-01-12",
-  },
-];
 
 export default function DeletePages() {
   const navigate = useNavigate();
@@ -97,8 +66,10 @@ export default function DeletePages() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [resultFile, setResultFile] = useState<File | null>(null);
+  const [myFiles, setMyFiles] = useState<MyFileData[]>([]);
 
-  // Generate mock page thumbnails
+  // Generate mock pages thumbnails
   const generateMockPages = (pageCount: number): PDFPage[] => {
     return Array.from({ length: pageCount }, (_, index) => ({
       id: `page-${index + 1}`,
@@ -270,12 +241,39 @@ export default function DeletePages() {
     return { valid: true, error: null };
   };
 
+  // Add handlePageCount for real backend page count
+  const handlePageCount = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const token = localStorage.getItem("authToken");
+      const response = await fetch("http://localhost:8000/myfiles/count-pages/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error("Failed to get page count");
+      }
+      const data = await response.json();
+      const count = data.pages;
+      setPdfPages(generateMockPages(count));
+    } catch (error) {
+      console.error("Error getting page count:", error);
+      toast({
+        title: "Page count failed",
+        description: "Could not retrieve the number of pages in the PDF.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle file upload
-  const handleFileUpload = (files: FileList | null) => {
+  const handleFileUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-
     const file = files[0];
-
     // Validate file type
     if (file.type !== "application/pdf") {
       toast({
@@ -285,7 +283,6 @@ export default function DeletePages() {
       });
       return;
     }
-
     // Validate file size (max 50MB)
     if (file.size > 50 * 1024 * 1024) {
       toast({
@@ -295,26 +292,65 @@ export default function DeletePages() {
       });
       return;
     }
-
     setIsUploading(true);
-
-    // Simulate upload and page generation
-    setTimeout(() => {
-      setUploadedFile(file);
-      const mockPageCount = Math.floor(Math.random() * 20) + 10; // 10-30 pages
-      const pages = generateMockPages(mockPageCount);
-      setPdfPages(pages);
-      setIsUploading(false);
-    }, 2000);
+    setUploadedFile(file);
+    await handlePageCount(file);
+    setIsUploading(false);
+    toast({
+      title: "File uploaded successfully",
+      description: `${file.name} has been uploaded.`,
+    });
   };
 
+  // Fetch real My Files when modal opens
+  useEffect(() => {
+    if (showMyFilesModal) {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+      fetchMyFiles(token).then((files) => setMyFiles(files));
+    }
+  }, [showMyFilesModal]);
+
   // Handle My Files selection
-  const handleMyFileSelect = async (file: MockMyFile) => {
-    toast({
-      title: "Feature Disabled",
-      description: "Please upload a real file instead of selecting from mock files.",
-      variant: "destructive",
-    });
+  const handleMyFileSelect = async (file: MyFileData) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) throw new Error("Missing auth token");
+      const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to download selected file from My Files.");
+      const blob = await response.blob();
+      const realFile = new File([blob], file.name, { type: "application/pdf" });
+      setUploadedFile(realFile);
+      // Get real page count from backend
+      const formData = new FormData();
+      formData.append("file", realFile);
+      const countRes = await fetch("http://localhost:8000/myfiles/count-pages/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      let pageCount = 1;
+      if (countRes.ok) {
+        const data = await countRes.json();
+        pageCount = data.pages;
+      }
+      setPdfPages(generateMockPages(pageCount));
+      toast({
+        title: "File selected",
+        description: `${file.name} loaded from My Files with real page count.`,
+      });
+      setShowMyFilesModal(false);
+    } catch (error) {
+      console.error("❌ Error selecting file from My Files:", error);
+      toast({
+        title: "File selection failed",
+        description: "Could not load the file from My Files.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle drag and drop
@@ -391,48 +427,22 @@ export default function DeletePages() {
   const handleDelete = async () => {
     setShowConfirmDialog(false);
     setIsProcessing(true);
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsProcessed(true);
-
-      const pages = parsePageRanges(pageRanges);
-      const remaining = pdfPages.length - pages.length;
-
-      toast({
-        title: "Pages deleted successfully!",
-        description: `${pages.length} page(s) removed. ${remaining} page(s) remain in the document.`,
-      });
-    }, 3000);
-  };
-
-  const handleDownload = async () => {
     const pagesToDelete = parsePageRanges(pageRanges).filter((p) => !isNaN(p) && p >= 1);
-
     if (!uploadedFile || pagesToDelete.length === 0) {
       toast({
         title: "Invalid Pages",
-        description: "Please specify valid pages (only integers ≥ 1) before downloading.",
+        description: "Please specify valid pages (only integers ≥ 1) before deleting.",
         variant: "destructive",
       });
+      setIsProcessing(false);
       return;
     }
-
-    setIsDownloading(true);
-
     try {
       const formData = new FormData();
       formData.append("file", uploadedFile);
-      pagesToDelete.forEach((page) => {
-        formData.append("pages_to_delete", page.toString());
+      pagesToDelete.forEach((p) => {
+        formData.append("pages_to_delete", p.toString());
       });
-
-      console.log("DEBUG – FormData contents:");
-      for (const [key, value] of formData.entries()) {
-        console.log(`${key}:`, value);
-      }
-
       const response = await fetch("http://localhost:8000/basic/delete/", {
         method: "POST",
         headers: {
@@ -440,30 +450,54 @@ export default function DeletePages() {
         },
         body: formData,
       });
-
       if (!response.ok) {
         const errorData = await response.json();
         console.error("❌ Backend error response:", errorData);
-        throw new Error("Download failed");
+        throw new Error("Delete failed");
       }
-
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      const file = new File([blob], uploadedFile.name.replace(/\.pdf$/i, "_deleted.pdf"), { type: "application/pdf" });
+      setResultFile(file);
+      setIsProcessing(false);
+      setIsProcessed(true);
+      toast({
+        title: "Pages deleted successfully!",
+        description: `${pagesToDelete.length} page(s) removed. ${pdfPages.length - pagesToDelete.length} page(s) remain in the document.`,
+      });
+    } catch (error) {
+      setIsProcessing(false);
+      toast({
+        title: "Delete failed",
+        description: "An error occurred while deleting pages.",
+        variant: "destructive",
+      });
+    }
+  };
 
+  const handleDownload = async () => {
+    if (!resultFile) {
+      toast({
+        title: "No result file",
+        description: "Please delete pages first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsDownloading(true);
+    try {
+      const url = window.URL.createObjectURL(resultFile);
       const link = document.createElement("a");
       link.href = url;
-      link.download = uploadedFile.name.replace(".pdf", "_deleted.pdf");
+      link.download = resultFile.name;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-
       toast({
         title: "Download started",
         description: "Your modified PDF is being downloaded.",
       });
     } catch (error) {
-      console.error("❌ Delete pages download error:", error);
       toast({
         title: "Download failed",
         description: "An error occurred while downloading the PDF.",
@@ -474,16 +508,37 @@ export default function DeletePages() {
     }
   };
 
-  const handleSaveToMyFiles = () => {
-    if (!toast) {
-      console.error("Toast function is not defined.");
+  const handleSaveToMyFiles = async () => {
+    const token = localStorage.getItem("authToken");
+    if (!token || !resultFile) {
+      toast({
+        title: "Save Failed",
+        description: "No file available to save. Please delete pages first.",
+        variant: "destructive",
+      });
       return;
     }
-    toast({
-      title: "Saved to My Files",
-      description: "Your modified PDF has been saved to My Files",
-    });
+    try {
+      const response = await savePDFToMyFiles(resultFile, token);
+      if (!response.ok) {
+        const error = await response.text();
+        console.error("Upload failed:", error);
+        throw new Error("Upload failed");
+      }
+      toast({
+        title: "Saved to My Files",
+        description: `${resultFile.name} has been uploaded successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Save Failed",
+        description: "Could not save the file to My Files.",
+        variant: "destructive",
+      });
+    }
   };
+
+
 
   // Remove uploaded file and start over
   const removeFile = () => {
@@ -615,7 +670,7 @@ export default function DeletePages() {
                           ref={fileInputRef}
                           type="file"
                           accept=".pdf,application/pdf"
-                          onChange={(e) => handleFileUpload(e.target.files)}
+                          onChange={async (e) => await handleFileUpload(e.target.files)}
                           className="hidden"
                         />
                       </div>
@@ -1020,24 +1075,28 @@ export default function DeletePages() {
           </DialogHeader>
 
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
+            {myFiles.length === 0 ? (
+              <div className="text-center text-slate-500 py-8">No files found in My Files.</div>
+            ) : (
+              myFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
+                  onClick={() => handleMyFileSelect(file)}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-8 w-8 text-red-500" />
+                    <div>
+                      <h3 className="font-medium text-slate-900">{file.name}</h3>
+                      <p className="text-sm text-slate-500">
+                        {file.size} • {file.pages} pages
+                      </p>
+                    </div>
                   </div>
+                  <Badge variant="outline">Select</Badge>
                 </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>

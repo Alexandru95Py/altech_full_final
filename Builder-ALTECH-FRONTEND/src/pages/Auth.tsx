@@ -113,8 +113,6 @@ export default function Auth() {
   const isLoginValid =
     loginData.email && loginData.password && isEmailValid(loginData.email);
   const isRegisterValid =
-    registerData.firstName &&
-    registerData.lastName &&
     registerData.email &&
     isEmailValid(registerData.email) &&
     isPasswordValid &&
@@ -176,24 +174,27 @@ export default function Auth() {
       const response = await djangoAPI.register({
         email: registerData.email,
         password: registerData.password,
-        firstName: registerData.firstName,
-        lastName: registerData.lastName,
+        firstName: registerData.firstName || "",
+        lastName: registerData.lastName || "",
       });
 
-      if (response.success && response.data) {
-        const access = response.data.access;
-        const user = response.data.user;
-
-        apiClient.setAuthToken(access);
-        localStorage.setItem("authToken", access);
-        localStorage.setItem("user", JSON.stringify(user));
-
+      if (response.success && response.data && response.data.user) {
+        // Registration successful, redirect to verify email page
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("user");
         toast({
           title: "Registration successful",
-          description: `Welcome to ALTech PDF, ${user.first_name}!`,
+          description: `Please check your email for the 6-digit verification code and enter it below to activate your account.`,
         });
-
-        navigate("/");
+        navigate(
+          `/verify-email?email=${encodeURIComponent(response.data.user.email)}`
+        );
+      } else {
+        // Registration failed, show error toast
+        toast({
+          title: "Registration failed",
+          description: handleAPIError(response),
+        });
       }
     } catch (error) {
       console.error("Registration failed:", error);

@@ -3,7 +3,15 @@
  * Handles API communication, validation, and error handling for PDF tools
  */
 
-import { pdfAPI, APIResponse, PDFProcessResponse } from "@/lib/api";
+import { pdfAPI, APIResponse } from "@/lib/api";
+
+// Define PDFProcessResponse locally if needed (adjust fields as required)
+export interface PDFProcessResponse {
+  // Example fields, replace with actual structure as needed
+  fileId: string;
+  downloadUrl: string;
+  [key: string]: any;
+}
 
 export interface SplitOptions {
   method: "selection" | "range" | "evenly";
@@ -65,7 +73,8 @@ class PDFService {
     options: SplitOptions,
   ): Promise<APIResponse<PDFProcessResponse>> {
     try {
-      return await pdfAPI.splitPDF(fileId, options);
+      // The API expects an array of pages for split
+      return await pdfAPI.splitPDF(fileId, options.selectedPages || []) as APIResponse<PDFProcessResponse>;
     } catch (error) {
       throw this.handleError(error, "Failed to split PDF");
     }
@@ -76,7 +85,7 @@ class PDFService {
     options: MergeOptions,
   ): Promise<APIResponse<PDFProcessResponse>> {
     try {
-      return await pdfAPI.mergePDF(options.fileIds, options);
+      return await pdfAPI.mergePDFs(options.fileIds, options) as APIResponse<PDFProcessResponse>;
     } catch (error) {
       throw this.handleError(error, "Failed to merge PDFs");
     }
@@ -88,7 +97,7 @@ class PDFService {
     options: CompressOptions,
   ): Promise<APIResponse<PDFProcessResponse>> {
     try {
-      return await pdfAPI.compressPDF(fileId, options);
+      return await pdfAPI.compressPDF(fileId, options) as APIResponse<PDFProcessResponse>;
     } catch (error) {
       throw this.handleError(error, "Failed to compress PDF");
     }
@@ -99,11 +108,8 @@ class PDFService {
     fileId: string,
     options: ProtectOptions,
   ): Promise<APIResponse<PDFProcessResponse>> {
-    try {
-      return await pdfAPI.protectPDF(fileId, options);
-    } catch (error) {
-      throw this.handleError(error, "Failed to protect PDF");
-    }
+    // No endpoint in pdfAPI for protectPDF, so throw a clear error
+    throw new Error("protectPDF endpoint is not implemented in the API. Please add it to src/lib/api.ts if needed.");
   }
 
   // Reorder or remove pages within a PDF document
@@ -112,7 +118,8 @@ class PDFService {
     options: ReorderOptions,
   ): Promise<APIResponse<PDFProcessResponse>> {
     try {
-      return await pdfAPI.reorderPDF(fileId, options);
+      // The API expects a pageOrder array
+      return await pdfAPI.reorderPages(fileId, options.pageOrder) as APIResponse<PDFProcessResponse>;
     } catch (error) {
       throw this.handleError(error, "Failed to reorder PDF pages");
     }
@@ -148,7 +155,7 @@ class PDFService {
     pages: number[],
   ): Promise<APIResponse<PDFProcessResponse>> {
     try {
-      throw new Error("Extract operation not yet implemented in API");
+      return await pdfAPI.extractPages(fileId, pages) as APIResponse<PDFProcessResponse>;
     } catch (error) {
       throw this.handleError(error, "Failed to extract PDF pages");
     }
@@ -160,7 +167,7 @@ class PDFService {
     pages: number[],
   ): Promise<APIResponse<PDFProcessResponse>> {
     try {
-      throw new Error("Delete pages operation not yet implemented in API");
+      return await pdfAPI.deletePages(fileId, pages) as APIResponse<PDFProcessResponse>;
     } catch (error) {
       throw this.handleError(error, "Failed to delete PDF pages");
     }
@@ -246,14 +253,3 @@ class PDFService {
 
 // Export singleton instance for use across the application
 export const pdfService = new PDFService();
-
-// Export types for use in components
-export type {
-  SplitOptions,
-  MergeOptions,
-  CompressOptions,
-  ProtectOptions,
-  ReorderOptions,
-  RotateOptions,
-  ConvertOptions,
-};

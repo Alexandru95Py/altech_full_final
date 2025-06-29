@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
  * Features move, resize, rotate capabilities for all PDF elements
  */
 const FillSign = () => {
-  const { validateUploadSize } = useStorageValidation();
+  const { canUpload } = useStorageValidation();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Core state
@@ -73,7 +73,7 @@ const FillSign = () => {
       return;
     }
 
-    if (!validateUploadSize(file.size)) {
+    if (!canUpload(file.size)) {
       return;
     }
 
@@ -203,16 +203,10 @@ const FillSign = () => {
         return;
       }
 
-      const response = await djangoAPI.signPDF({
-        file_id: uploadedFileId,
-        signature_data:
-          signatureElement.signatureData || signatureElement.content,
-        position: {
-          x: signatureElement.x,
-          y: signatureElement.y,
-          page: 1, // Default to first page
-        },
-      });
+      const response = await djangoAPI.signPDF(
+        uploadedFileId,
+        signatureElement.signatureData || signatureElement.content
+      );
 
       if (response.success) {
         toast.success("Document saved to My Files successfully!");
@@ -331,18 +325,21 @@ const FillSign = () => {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* PDF Editor Canvas */}
             <div className="lg:col-span-3">
-              <Card className="h-[700px]">
-                <CardContent className="p-0 h-full">
-                  <PDFCanvas
-                    pdfUrl={pdfUrl}
-                    elements={elements}
-                    activeTool={activeTool}
-                    onElementsChange={handleElementsChange}
-                    onElementAdd={handleElementAdd}
-                    className="w-full h-full"
-                  />
+              <Card className="h-[700px] overflow-hidden relative">
+                <CardContent className="p-0 h-full relative">
+                  <div className="pdf-editable-area w-full h-full relative overflow-auto">
+                    <PDFCanvas
+                      pdfUrl={pdfUrl}
+                      elements={elements}
+                      activeTool={activeTool}
+                      onElementsChange={handleElementsChange}
+                      onElementAdd={handleElementAdd}
+                      className="absolute top-0 left-0"
+                    />
+                  </div>
                 </CardContent>
               </Card>
+
             </div>
 
             {/* Tools Panel */}

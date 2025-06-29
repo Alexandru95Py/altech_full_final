@@ -5,9 +5,6 @@ import TextStyle from "@tiptap/extension-text-style";
 import FontFamily from "@tiptap/extension-font-family";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
-import ListItem from "@tiptap/extension-list-item";
-import BulletList from "@tiptap/extension-bullet-list";
-import OrderedList from "@tiptap/extension-ordered-list";
 import Image from "@tiptap/extension-image";
 import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
@@ -47,6 +44,21 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         heading: {
           levels: [1, 2, 3, 4, 5, 6],
         },
+        listItem: {
+          HTMLAttributes: {
+            class: "leading-relaxed",
+          },
+        },
+        bulletList: {
+          HTMLAttributes: {
+            class: "list-disc list-inside space-y-1",
+          },
+        },
+        orderedList: {
+          HTMLAttributes: {
+            class: "list-decimal list-inside space-y-1",
+          },
+        },
       }),
       TextStyle,
       FontFamily.configure({
@@ -57,21 +69,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         types: ["heading", "paragraph"],
         alignments: ["left", "center", "right", "justify"],
         defaultAlignment: "left",
-      }),
-      ListItem.configure({
-        HTMLAttributes: {
-          class: "leading-relaxed",
-        },
-      }),
-      BulletList.configure({
-        HTMLAttributes: {
-          class: "list-disc list-inside space-y-1",
-        },
-      }),
-      OrderedList.configure({
-        HTMLAttributes: {
-          class: "list-decimal list-inside space-y-1",
-        },
       }),
       Image.configure({
         HTMLAttributes: {
@@ -245,7 +242,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       />
 
       {/* Custom styles for placeholder */}
-      <style jsx>{`
+      <style>{`
         .ProseMirror p.is-editor-empty:first-child::before {
           content: attr(data-placeholder);
           float: left;

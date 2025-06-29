@@ -37,12 +37,18 @@ export function MainContent({ className }: MainContentProps) {
     }
   };
 
+  // Always fetch user from localStorage to ensure latest data
+  let user: any = null;
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "null");
+  } catch {}
+
   return (
     <div className={cn("space-y-6", className)}>
       {/* Welcome Section */}
       <div>
         <h1 className="text-3xl font-bold text-slate-900 mb-6">
-          Welcome back, Alexandru
+          {user && user.first_name ? `Welcome back, ${user.first_name}` : "Welcome back, User"}
         </h1>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

@@ -1,9 +1,15 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+
+
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
 import { Footer } from "@/components/dashboard/Footer";
 import { Button } from "@/components/ui/button";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
+import { UploadFromMyFiles } from "@/utils/UploadFromMyFiles";
+
+
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +45,13 @@ import {
   FileImage,
   ArrowRight,
 } from "lucide-react";
+// Define MyFileData interface locally (adjust fields as needed)
+interface MyFileData {
+  id: string;
+  name: string;
+  size: string;
+  pages: number;
+}
 
 interface PDFPage {
   id: string;
@@ -55,42 +68,18 @@ interface ExtractedPagesResult {
   extractedAt: Date;
 }
 
-// Mock data for My Files
-const mockMyFiles = [
-  {
-    id: "1",
-    name: "Company_Handbook_2024.pdf",
-    size: "8.5 MB",
-    pages: 45,
-    uploadDate: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Product_Specifications.pdf",
-    size: "12.2 MB",
-    pages: 67,
-    uploadDate: "2024-01-14",
-  },
-  {
-    id: "3",
-    name: "Financial_Report_Q4.pdf",
-    size: "6.8 MB",
-    pages: 28,
-    uploadDate: "2024-01-12",
-  },
-];
-
 export default function ExtractPages() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  
+
+
   const [pdfPages, setPdfPages] = useState<PDFPage[]>([]);
   const [pageRanges, setPageRanges] = useState("");
-  const [outputOption, setOutputOption] = useState<"download" | "save">(
-    "download",
-  );
+  const [outputOption, setOutputOption] = useState<"download" | "save">("download",);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -98,11 +87,16 @@ export default function ExtractPages() {
   const [showMyFilesModal, setShowMyFilesModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [myFiles, setMyFiles] = useState([]);
+  const [resultFile, setResultFile] = useState<File | null>(null);
+
 
   // NEW: Store the extracted pages result for download
   const [extractedResult, setExtractedResult] =
     useState<ExtractedPagesResult | null>(null);
 
+
+   
   // Generate mock page thumbnails
   const generateMockPages = (pageCount: number): PDFPage[] => {
     return Array.from({ length: pageCount }, (_, index) => ({
@@ -220,224 +214,367 @@ export default function ExtractPages() {
     }
   };
 
-  // Handle file upload
-  const handleFileUpload = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+// ✅ 1. Funcția care obține numărul real de pagini din backend
+const handlePageCount = async (file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
 
-    const file = files[0];
+    const token = localStorage.getItem("authToken"); // sau "token" dacă așa salvezi
 
-    // Validate file type
-    if (file.type !== "application/pdf") {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a PDF file",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Validate file size (max 50MB)
-    if (file.size > 50 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Please upload a PDF file smaller than 50MB",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsUploading(true);
-
-    // Simulate upload and page generation
-    setTimeout(() => {
-      setUploadedFile(file);
-      const mockPageCount = Math.floor(Math.random() * 20) + 10; // 10-30 pages
-      const pages = generateMockPages(mockPageCount);
-      setPdfPages(pages);
-      setIsUploading(false);
-
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} loaded with ${mockPageCount} pages`,
-      });
-    }, 2000);
-  };
-
-  // Handle My Files selection
-  const handleMyFileSelect = (file: (typeof mockMyFiles)[0]) => {
-    const mockFile = new File([], file.name, { type: "application/pdf" });
-    Object.defineProperty(mockFile, "size", {
-      value: parseFloat(file.size.replace(/[^\d.]/g, "")) * 1024 * 1024,
+    const response = await fetch("http://localhost:8000/myfiles/count-pages/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
     });
 
-    setUploadedFile(mockFile);
-    const pages = generateMockPages(file.pages);
+    if (!response.ok) {
+      throw new Error("Failed to get page count");
+    }
+
+    const data = await response.json();
+    const count = data.pages;
+
+    const pages: PDFPage[] = Array.from({ length: count }, (_, index) => ({
+      id: `page-${index + 1}`,
+      pageNumber: index + 1,
+      selected: false,
+      thumbnail: "",
+    }));
+
     setPdfPages(pages);
-    setShowMyFilesModal(false);
+  } catch (error) {
+    console.error("❌ Error getting page count:", error);
+    toast({
+      title: "Page count failed",
+      description: "Could not retrieve the number of pages in the PDF.",
+      variant: "destructive",
+    });
+  }
+};
+
+  // ✅ 2. Înlocuiește funcția de upload local
+// ✅ 1. Upload din device (stil Split)
+const handleFileUpload = async (files: FileList | null) => {
+  if (!files || files.length === 0) return;
+
+  const file = files[0];
+
+  const validation = validateFile(file);
+  if (!validation.valid) {
+    toast({
+      title: "Upload failed",
+      description: validation.error,
+      variant: "destructive",
+    });
+    return;
+  }
+
+  setUploadedFile(file); // 🔁 simplu File object
+  setPdfPages([]); // resetăm previewul
+
+  await handlePageCount(file); // ⬅️ contor real din backend
+
+  toast({
+    title: "File uploaded",
+    description: `${file.name} is ready for processing`,
+  });
+};
+
+// ✅ 2. Selectare din My Files (folosește File mock, ca în Split)
+const handleMyFileSelect = async (file: MyFileData) => {
+  try {
+    const token = localStorage.getItem("authToken");
+    if (!token) throw new Error("Missing auth token");
+
+    const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to download selected file from My Files.");
+    }
+
+    const blob = await response.blob();
+    const realFile = new File([blob], file.name, { type: "application/pdf" });
+
+    setUploadedFile(realFile);
+    setPdfPages([]);
+
+    await handlePageCount(realFile);
 
     toast({
       title: "File selected",
-      description: `${file.name} loaded with ${file.pages} pages`,
+      description: `${file.name} loaded from My Files with real page count.`,
     });
-  };
 
-  // Handle drag and drop
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
+    setShowMyFilesModal(false);
+  } catch (error) {
+    console.error("❌ Error selecting file from My Files:", error);
+    toast({
+      title: "File selection failed",
+      description: "Could not load the file from My Files.",
+      variant: "destructive",
+    });
+  }
+};
 
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  };
+  // (Removed duplicate handleDragOver, handleDragLeave, handleDrop)
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    handleFileUpload(e.dataTransfer.files);
-  };
 
-  // FIXED: Handle extraction with proper state management
-  const handleExtract = async () => {
-    const validation = validatePageRanges(pageRanges);
-    if (!validation.valid) {
-      toast({
-        title: "Invalid page selection",
-        description: validation.message,
-        variant: "destructive",
-      });
-      return;
+// ✅ 4. Extrage paginile (fără file_id, trimite fișierul ca FormData)
+const handleExtract = async () => {
+  const validation = validatePageRanges(pageRanges);
+  if (!validation.valid) {
+    toast({
+      title: "Invalid page selection",
+      description: validation.message,
+      variant: "destructive",
+    });
+    return;
+  }
+
+  if (!uploadedFile) {
+    toast({
+      title: "No file selected",
+      description: "Please upload a file first",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  setIsProcessing(true);
+
+  try {
+    const parsedPages = parsePageRanges(pageRanges);
+    const token = localStorage.getItem("authToken");
+
+    const formData = new FormData();
+    formData.append("file", uploadedFile);
+    parsedPages.forEach((page) => {
+      formData.append("pages", page.toString());
+    });
+
+    const response = await fetch("http://localhost:8000/basic/extract_pages/extract/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to extract pages");
     }
+
+    const blob = await response.blob();
+    const file = new File([blob], `extracted_pages_${uploadedFile.name}`, {
+      type: "application/pdf",
+      
+    });
+    console.log("🧪 [DEBUG] Extracted file info:");
+      console.log("Name:", file.name);
+      console.log("Size (bytes):", file.size);
+      console.log("Type:", file.type);
+
+
+    setResultFile(file);
+    setExtractedResult({
+      pageNumbers: parsedPages,
+      totalPages: parsedPages.length,
+      filename: file.name,
+      extractedAt: new Date(),
+    });
+
+    setIsProcessed(true);
+    setIsProcessing(false);
+
+    toast({
+      title: "Pages extracted successfully!",
+      description: "You can now download or save the new PDF.",
+    });
+
+    console.log("✅ Extract completed - awaiting user action (download or save)");
+  } catch (error) {
+    setIsProcessing(false);
+    toast({
+      title: "Extraction failed",
+      description: (error as Error).message || "Failed to extract pages",
+      variant: "destructive",
+    });
+  }
+};
+
+
+
+  // FIXED: Handle download with proper extracted pages check
+ const handleDownload = async () => {
+  try {
+    const token = localStorage.getItem("authToken");
+    const formData = new FormData();
 
     if (!uploadedFile) {
       toast({
         title: "No file selected",
-        description: "Please upload a file first",
+        description: "Please upload a PDF before downloading.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsProcessing(true);
+    const selectedPages = extractedResult?.pageNumbers || [];
 
-    // Simulate processing
-    setTimeout(() => {
-      const extractedPageNumbers = parsePageRanges(pageRanges);
-
-      // FIXED: Store the extraction result for download
-      const result: ExtractedPagesResult = {
-        pageNumbers: extractedPageNumbers,
-        totalPages: extractedPageNumbers.length,
-        filename: uploadedFile.name,
-        extractedAt: new Date(),
-      };
-
-      setExtractedResult(result);
-      setIsProcessing(false);
-      setIsProcessed(true);
-
+    if (selectedPages.length === 0) {
       toast({
-        title: "Pages extracted successfully!",
-        description: `${extractedPageNumbers.length} page(s) extracted from ${uploadedFile.name}`,
-      });
-
-      console.log("✅ Extract completed - pages stored for download:", result);
-    }, 3000);
-  };
-
-  // FIXED: Handle download with proper extracted pages check
-  const handleDownload = async () => {
-    // FIXED: Check if extraction was completed and result exists
-    if (!extractedResult || !uploadedFile) {
-      toast({
-        title: "No Extracted Pages",
+        title: "No pages selected",
         description: "Please extract pages first before downloading.",
         variant: "destructive",
       });
       return;
     }
 
-    if (extractedResult.pageNumbers.length === 0) {
-      toast({
-        title: "No Pages Selected",
-        description: "No pages were selected for extraction.",
-        variant: "destructive",
-      });
-      return;
+    // ✅ Adaugă fișierul o singură dată
+    formData.append("file", uploadedFile);
+
+    // ✅ Adaugă paginile selectate
+    selectedPages.forEach((page) => {
+      formData.append("pages", page.toString());
+    });
+
+    const response = await fetch("http://localhost:8000/basic/extract_pages/extract/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to download extracted pages");
     }
 
-    setIsDownloading(true);
-    try {
-      const baseName = uploadedFile.name.replace(".pdf", "");
-      const timestamp = new Date().toISOString().split("T")[0];
-      const pageList = extractedResult.pageNumbers.join(",");
-      const filename = `extracted_${baseName}_pages_${pageList}_${timestamp}.pdf`;
+    const blob = await response.blob();
+    const file = new File([blob], "extracted_pages.pdf", { type: "application/pdf" });
 
-      console.log("🔽 Starting extract PDF download:", {
-        filename,
-        extractedPages: extractedResult.pageNumbers,
-        totalPages: extractedResult.totalPages,
-      });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "extracted_pages.pdf";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
 
-      // Use the real file download system
-      await realFileDownload("extract", filename);
+    toast({
+      title: "Download successful",
+      description: "Extracted pages downloaded successfully.",
+    });
+  } catch (error) {
+    console.error("Download failed:", error);
+    toast({
+      title: "Download failed",
+      description: "Unable to download extracted pages.",
+      variant: "destructive",
+    });
+  }
+};
 
-      toast({
-        title: "Download Started!",
-        description: `Downloading extracted pages (${extractedResult.pageNumbers.join(", ")}) from ${uploadedFile.name}`,
-      });
-    } catch (error) {
-      console.error("❌ Extract download error:", error);
-      toast({
-        title: "Download Failed",
-        description: "Failed to download extracted pages. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDownloading(false);
-    }
-  };
 
-  const handleSaveToMyFiles = () => {
-    if (!extractedResult) {
-      toast({
-        title: "No Extracted Pages",
-        description: "Please extract pages first before saving.",
-        variant: "destructive",
-      });
-      return;
+ const handleSaveToMyFiles = async () => {
+  const token = localStorage.getItem("authToken");
+
+  if (!extractedResult || !resultFile) {
+    toast({
+      title: "Save Failed",
+      description: "No file available to save. Please extract pages first.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  // 🔍 DEBUG INFO
+  console.log("📤 [SAVE TO MY FILES] Preparing to upload file:");
+  console.log("Name:", resultFile.name);
+  console.log("Size (bytes):", resultFile.size);
+  console.log("Type:", resultFile.type);
+
+  try {
+    const response = await savePDFToMyFiles(resultFile, token);
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("❌ Upload to My Files failed:", error);
+      throw new Error("Upload failed");
     }
 
     toast({
       title: "Saved to My Files",
-      description: `Your extracted pages (${extractedResult.pageNumbers.join(", ")}) have been saved to My Files`,
+      description: `Extracted pages (${extractedResult.pageNumbers.join(", ")}) have been saved.`,
     });
-  };
 
-  // Remove uploaded file and start over
-  const removeFile = () => {
-    setUploadedFile(null);
-    setPdfPages([]);
-    setPageRanges("");
-    setIsProcessed(false);
-    setExtractedResult(null); // FIXED: Clear extracted result
+    console.log("✅ [SAVE TO MY FILES] File uploaded successfully.");
+  } catch (error) {
+    console.error("❌ [SAVE TO MY FILES] Upload error:", error);
     toast({
-      title: "File removed",
-      description: "You can now upload a new PDF file",
+      title: "Save Failed",
+      description: "Could not save the file to My Files.",
+      variant: "destructive",
     });
-  };
+  }
+};
 
-  // Copy example to input
-  const copyExample = (example: string) => {
-    setPageRanges(example);
-    toast({
-      title: "Example copied",
-      description: `Page range "${example}" has been set`,
-    });
-  };
+
+const removeFile = () => {
+  setUploadedFile(null);
+  setPdfPages([]);
+  setPageRanges("");
+  setIsProcessed(false);
+  setExtractedResult(null);
+  setResultFile(null);
+  toast({
+    title: "File removed",
+    description: "You can now upload a new PDF file",
+  });
+};
+
+const copyExample = (example: string) => {
+  setPageRanges(example);
+  toast({
+    title: "Example copied",
+    description: `Page range "${example}" has been set.`,
+  });
+};
+
+
+
+
 
   const validation = validatePageRanges(pageRanges);
+
+  // Drag and drop handlers for file upload
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -871,43 +1008,36 @@ export default function ExtractPages() {
         </div>
       </main>
 
-      {/* My Files Modal */}
-      <Dialog open={showMyFilesModal} onOpenChange={setShowMyFilesModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Files className="h-5 w-5" />
-              Choose from My Files
-            </DialogTitle>
-            <DialogDescription>
-              Select a PDF file from your saved documents to extract pages from
-            </DialogDescription>
-          </DialogHeader>
+     <UploadFromMyFiles
+  open={showMyFilesModal}
+  onClose={() => {
+    console.log("📁 MyFiles modal closed");
+    setShowMyFilesModal(false);
+  }}
+  onSelectFile={(file) => {
+    console.log("📁 Selected from MyFiles:", file);
+    toast({
+      title: "Selected file",
+      description: `${file.name} (${file.size} • ${file.pages} pages)`,
+    });
+    handleMyFileSelect({ ...file, id: String(file.id) }); // convert id to string
+  }}
+/>
 
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <Footer />
     </div>
   );
 }
+
+const validateFile = (file: File) => {
+  const maxSize = 10 * 1024 * 1024; // 10MB
+
+  if (file.type !== "application/pdf") {
+    return { valid: false, error: "Please upload a PDF file only." };
+  }
+  if (file.size > maxSize) {
+    return { valid: false, error: "File size must be less than 10MB" };
+  }
+  return { valid: true, error: null };
+};

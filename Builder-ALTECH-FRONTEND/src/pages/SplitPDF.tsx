@@ -10,6 +10,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
+
 import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
@@ -36,6 +38,11 @@ import {
   Settings,
   Files,
 } from "lucide-react";
+import { MyFileData } from "@/utils/fetchMyFiles";
+
+// Add this state to hold the files for the modal
+import { useEffect } from "react";
+import { UploadFromMyFiles } from "@/utils/UploadFromMyFiles";
 
 interface PDFPage {
   id: string;
@@ -55,9 +62,24 @@ export default function SplitPDF() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isProcessed, setIsProcessed] = useState(false);
   const [showMyFilesModal, setShowMyFilesModal] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [resultFile, setResultFile] = useState<File | null>(null);
+
+  // State for files in My Files modal
+  const [myFiles, setMyFiles] = useState<MyFileData[]>([]);
+
+  // Example: Fetch files from backend or use a mock
+  useEffect(() => {
+    // TODO: Replace with real fetch from backend
+    setMyFiles([
+      { id: 1, name: "Example1.pdf", size: "1.2 MB", pages: 5, url: "" },
+      {
+        id: 2, name: "Example2.pdf", size: "2.4 MB", pages: 10, url: ""
+      },
+    ]);
+  }, []);
   const [isDragOver, setIsDragOver] = useState(false);
   const [pdfPages, setPdfPages] = useState<PDFPage[]>([]);
+
 
   // Split configuration
   const [splitMethod, setSplitMethod] = useState<
@@ -67,35 +89,13 @@ export default function SplitPDF() {
   const [splitEvery, setSplitEvery] = useState("2");
   const [keepOriginal, setKeepOriginal] = useState(true);
   const [sendNotification, setSendNotification] = useState(false);
+ 
 
-  // Mock My Files data
-  const mockMyFiles = [
-    { id: 1, name: "Invoice_Q4_2024.pdf", size: "2.4 MB", pages: 15 },
-    { id: 2, name: "Contract_ALTech_Signed.pdf", size: "1.8 MB", pages: 8 },
-    { id: 3, name: "Resume_Alexandru_CV.pdf", size: "856 KB", pages: 2 },
-    { id: 4, name: "Report_Merged_Documents.pdf", size: "5.2 MB", pages: 45 },
-  ];
 
-  // Mock PDF pages (simulating extracted thumbnails)
-  const generateMockPages = (pageCount: number): PDFPage[] => {
-    return Array.from({ length: pageCount }, (_, index) => ({
-      id: `page-${index + 1}`,
-      pageNumber: index + 1,
-      selected: false,
-      thumbnail: `data:image/svg+xml;base64,${btoa(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="100" viewBox="0 0 80 100">
-          <rect width="80" height="100" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2"/>
-          <text x="40" y="50" text-anchor="middle" font-family="Arial" font-size="12" fill="#64748b">Page ${index + 1}</text>
-          <rect x="10" y="15" width="60" height="6" fill="#e2e8f0"/>
-          <rect x="10" y="25" width="45" height="4" fill="#e2e8f0"/>
-          <rect x="10" y="32" width="55" height="4" fill="#e2e8f0"/>
-          <rect x="10" y="65" width="40" height="4" fill="#e2e8f0"/>
-          <rect x="10" y="72" width="50" height="4" fill="#e2e8f0"/>
-          <rect x="10" y="79" width="35" height="4" fill="#e2e8f0"/>
-        </svg>`,
-      )}`,
-    }));
-  };
+  
+
+  
+ 
 
   // File validation
   const validateFile = (file: File) => {
@@ -109,6 +109,47 @@ export default function SplitPDF() {
     }
     return { valid: true, error: null };
   };
+
+ const handlePageCount = async (file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = localStorage.getItem("authToken"); // 🟢 nu "token", ci "authToken" dacă așa salvezi
+
+    const response = await fetch("http://localhost:8000/myfiles/count-pages/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to get page count");
+    }
+
+    const data = await response.json();
+    const count = data.pages;
+
+    const pages: PDFPage[] = Array.from({ length: count }, (_, index) => ({
+      id: `page-${index + 1}`,
+      pageNumber: index + 1,
+      selected: false,
+      thumbnail: "",
+    }));
+
+    setPdfPages(pages);
+  } catch (error) {
+    console.error("Error getting page count:", error);
+    toast({
+      title: "Page count failed",
+      description: "Could not retrieve the number of pages in the PDF.",
+      variant: "destructive",
+    });
+  }
+};
+
 
   // Handle file upload
   const handleFileUpload = async (files: FileList | null) => {
@@ -129,43 +170,64 @@ export default function SplitPDF() {
     setIsUploading(true);
 
     // Simulate upload process
-    setTimeout(() => {
-      setUploadedFile(file);
-      // Generate mock pages based on a random page count (5-25 pages)
-      const pageCount = Math.floor(Math.random() * 21) + 5;
-      const pages = generateMockPages(pageCount);
-      setPdfPages(pages);
-      setIsUploading(false);
+    setUploadedFile(file);
+
+      await handlePageCount(file); // apelează backendul pentru count real
 
       toast({
         title: "File uploaded successfully",
-        description: `${file.name} loaded with ${pageCount} pages`,
+        description: `${file.name} has been uploaded.`,
       });
 
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-    }, 2000);
   };
 
   // Handle file selection from My Files
-  const handleMyFileSelect = (file: (typeof mockMyFiles)[0]) => {
-    const mockFile = new File([], file.name, { type: "application/pdf" });
-    Object.defineProperty(mockFile, "size", {
-      value: parseFloat(file.size.replace(/[^\d.]/g, "")) * 1024 * 1024,
+  const handleMyFileSelect = async (file: MyFileData) => {
+  try {
+    const token = localStorage.getItem("authToken");
+    if (!token) throw new Error("Missing auth token");
+
+    const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     });
 
-    setUploadedFile(mockFile);
-    const pages = generateMockPages(file.pages);
-    setPdfPages(pages);
-    setShowMyFilesModal(false);
+    if (!response.ok) {
+      throw new Error("Failed to download selected file from My Files.");
+    }
+
+    const blob = await response.blob();
+    const realFile = new File([blob], file.name, { type: "application/pdf" });
+
+    setUploadedFile(realFile);
+    setPdfPages([]);
+
+    await handlePageCount(realFile);
 
     toast({
       title: "File selected",
-      description: `${file.name} loaded with ${file.pages} pages`,
+      description: `${file.name} loaded from My Files with real page count.`,
     });
-  };
+
+    setShowMyFilesModal(false);
+  } catch (error) {
+    console.error("❌ Error selecting file from My Files:", error);
+    toast({
+      title: "File selection failed",
+      description: "Could not load the file from My Files.",
+      variant: "destructive",
+    });
+  }
+};
+
+
+
 
   // Handle drag and drop
   const handleDragOver = (e: React.DragEvent) => {
@@ -234,66 +296,58 @@ export default function SplitPDF() {
 
   // Handle split processing
   const handleSplit = async () => {
-    if (!isSplitValid()) return;
+  if (!isSplitValid()) return;
 
-    setIsProcessing(true);
+  setIsProcessing(true);
 
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsProcessed(true);
-
-      let resultMessage = "";
-      if (splitMethod === "selection") {
-        const selectedCount = pdfPages.filter((page) => page.selected).length;
-        resultMessage = `Selected ${selectedCount} pages split into a new document`;
-      } else if (splitMethod === "range") {
-        resultMessage = `Pages split by ranges: ${pageRanges}`;
-      } else {
-        const fileCount = Math.ceil(pdfPages.length / parseInt(splitEvery));
-        resultMessage = `PDF split into ${fileCount} files (every ${splitEvery} pages)`;
-      }
-
-      toast({
-        title: "PDF split successfully",
-        description: resultMessage,
-      });
-    }, 3000);
-  };
-
-  // Handle download
-  const handleDownload = async () => {
   try {
     const token = localStorage.getItem("authToken");
     const formData = new FormData();
 
-    // 🔧 Adaugă fișierul PDF
     if (!uploadedFile) {
       toast({
         title: "No file selected",
-        description: "Please upload a PDF before downloading.",
+        description: "Please upload a PDF before splitting.",
         variant: "destructive",
       });
+      setIsProcessing(false);
       return;
     }
 
+    // 🔢 Calculează paginile
+    let selectedPages: number[] = [];
+
+    if (splitMethod === "selection") {
+      selectedPages = pdfPages
+        .filter((page) => page.selected)
+        .map((page) => page.pageNumber);
+    } else if (splitMethod === "range") {
+      const ranges = pageRanges
+        .split(",")
+        .map((r) => r.trim())
+        .flatMap((range) => {
+          const [start, end] = range.split("-").map(Number);
+          if (!isNaN(start) && !isNaN(end)) {
+            return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+          } else if (!isNaN(start)) {
+            return [start];
+          }
+          return [];
+        });
+      selectedPages = [...new Set(ranges)].sort((a, b) => a - b);
+    } else if (splitMethod === "evenly") {
+      const interval = parseInt(splitEvery);
+      if (!isNaN(interval) && interval > 0) {
+        selectedPages = pdfPages.map((page) => page.pageNumber);
+      }
+    }
+
+    formData.append("split_method", splitMethod);
     formData.append("file", uploadedFile);
-
-    const selectedPages = pdfPages
-      .filter((page) => page.selected)
-      .map((page) => page.pageNumber);
-
-    if (selectedPages.length === 0) {
-      toast({
-        title: "No pages selected",
-        description: "Select at least one page to split.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // ✅ Trimite ca JSON string
     formData.append("pages_to_split", JSON.stringify(selectedPages));
+    if (splitMethod === "evenly") {
+      formData.append("split_every", splitEvery);
+    }
 
     const response = await fetch("http://localhost:8000/basic/split/", {
       method: "POST",
@@ -304,15 +358,86 @@ export default function SplitPDF() {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to download split results");
+      throw new Error("Failed to split PDF.");
     }
 
     const blob = await response.blob();
+    const splitFile = new File([blob], "split_result.pdf", { type: "application/pdf" });
+
+    // 🔴 AICI setezi fișierul rezultat, vizibil pentru download și save!
+    setResultFile(splitFile);
+    setIsProcessed(true);
+    setIsProcessing(false);
+
+    toast({
+      title: "Split successful",
+      description: "You can now download or save your split PDF.",
+    });
+
+  } catch (error) {
+    console.error("❌ Split failed:", error);
+    toast({
+      title: "Split failed",
+      description: "An error occurred during PDF splitting.",
+      variant: "destructive",
+    });
+    setIsProcessing(false);
+  }
+};
+
+
+ const handleDownload = async () => {
+  try {
+    const token = localStorage.getItem("authToken");
+    const formData = new FormData();
+
+    if (!uploadedFile) {
+      toast({
+        title: "No file selected",
+        description: "Please upload a PDF before downloading.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedPages = pdfPages.filter((page) => page.selected).map((page) => page.pageNumber);
+
+    if (selectedPages.length === 0) {
+      toast({
+        title: "No pages selected",
+        description: "Please extract pages first before downloading.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // ✅ Adaugă fișierul o singură dată
+    formData.append("file", uploadedFile);
+
+    // ✅ Adaugă paginile selectate
+    selectedPages.forEach((page) => {
+      formData.append("pages", page.toString());
+    });
+
+    const response = await fetch("http://localhost:8000/basic/extract_pages/extract/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to download extracted pages");
+    }
+
+    const blob = await response.blob();
+    const file = new File([blob], "extracted_pages.pdf", { type: "application/pdf" });
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "split_result.pdf";
-    a.style.display = "none";
+    a.download = "extracted_pages.pdf";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -320,25 +445,65 @@ export default function SplitPDF() {
 
     toast({
       title: "Download successful",
-      description: "Split PDF downloaded successfully.",
+      description: "Extracted pages downloaded successfully.",
     });
   } catch (error) {
     console.error("Download failed:", error);
     toast({
       title: "Download failed",
-      description: "Unable to download split results.",
+      description: "Unable to download extracted pages.",
       variant: "destructive",
     });
   }
 };
 
-  // Handle save to My Files
-  const handleSaveToMyFiles = () => {
+
+
+
+// (Removed duplicate and out-of-scope code that referenced 'blob')
+
+  const handleSaveToMyFiles = async () => {
+  const token = localStorage.getItem("authToken");
+
+  if (!resultFile) {
+    toast({
+      title: "Save Failed",
+      description: "No split result available to save. Please split the PDF first.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  // 🔍 DEBUG
+  console.log("📤 [SAVE TO MY FILES - SPLIT]");
+  console.log("Name:", resultFile.name);
+  console.log("Size:", resultFile.size);
+  console.log("Type:", resultFile.type);
+
+  try {
+    const response = await savePDFToMyFiles(resultFile, token);
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("❌ Upload failed:", error);
+      throw new Error("Upload failed");
+    }
+
     toast({
       title: "Saved to My Files",
-      description: "Your split PDF files have been saved to My Files",
+      description: `${resultFile.name} uploaded successfully.`,
     });
-  };
+
+    console.log("✅ File uploaded successfully.");
+  } catch (error) {
+    console.error("❌ Save error:", error);
+    toast({
+      title: "Save Failed",
+      description: "Could not save the file to My Files.",
+      variant: "destructive",
+    });
+  }
+};
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -767,44 +932,27 @@ export default function SplitPDF() {
           </div>
         </div>
       </main>
+      {/* Replace mockMyFiles with an actual array or fetch from backend */}
+      {/* The modal for My Files should be rendered elsewhere, not here. Remove this duplicate block to fix the error. */}
 
-      {/* My Files Modal */}
-      <Dialog open={showMyFilesModal} onOpenChange={setShowMyFilesModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Files className="h-5 w-5" />
-              Choose from My Files
-            </DialogTitle>
-            <DialogDescription>
-              Select a PDF file from your saved documents to split
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Footer />
+            {/* === My Files Modal === */}
+      
+         <UploadFromMyFiles
+        open={showMyFilesModal}
+        onClose={() => {
+          console.log("📁 MyFiles modal closed");
+          setShowMyFilesModal(false);
+        }}
+        onSelectFile={(file) => {
+          console.log("📁 Selected from MyFiles:", file);
+          toast({
+            title: "Selected file",
+            description: `${file.name} (${file.size} • ${file.pages} pages)`,
+          });
+          handleMyFileSelect({ ...file, id: file.id }); // keep id as number
+        }}
+      />
+      <Footer/>
     </div>
   );
 }

@@ -63,6 +63,12 @@ export function Header({ className }: HeaderProps) {
     };
   }, []);
 
+  // Get user from localStorage (or AuthContext if available)
+  let user: any = null;
+  try {
+    user = JSON.parse(localStorage.getItem("user") || "null");
+  } catch {}
+
   return (
     <header
       className={cn(
@@ -148,7 +154,7 @@ export function Header({ className }: HeaderProps) {
                 </Avatar>
                 <div className="flex flex-col min-w-0">
                   <span className="text-sm font-medium text-slate-900 truncate">
-                    Alexandru
+                    {user && user.first_name ? user.first_name : "User"}
                   </span>
                   <div className="flex items-center gap-1.5">
                     <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>

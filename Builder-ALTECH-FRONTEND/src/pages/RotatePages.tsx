@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Header } from "@/components/dashboard/Header";
@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { HelpTooltip, toolHelpContent } from "@/components/ui/help-tooltip";
+import { fetchMyFiles, MyFileData } from "@/utils/fetchMyFiles";
 
 interface PDFPage {
   id: string;
@@ -47,31 +49,6 @@ interface PDFPage {
 }
 
 type RotationAngle = "90cw" | "90ccw" | "180";
-
-// Mock data for My Files
-const mockMyFiles = [
-  {
-    id: "1",
-    name: "Presentation_Slides.pdf",
-    size: "4.2 MB",
-    pages: 24,
-    uploadDate: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Document_Scans.pdf",
-    size: "18.5 MB",
-    pages: 12,
-    uploadDate: "2024-01-14",
-  },
-  {
-    id: "3",
-    name: "Report_Draft.pdf",
-    size: "7.8 MB",
-    pages: 35,
-    uploadDate: "2024-01-12",
-  },
-];
 
 export default function RotatePages() {
   const navigate = useNavigate();
@@ -92,6 +69,8 @@ export default function RotatePages() {
   const [showMyFilesModal, setShowMyFilesModal] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showPreview, setShowPreview] = useState(true);
+  const [resultFile, setResultFile] = useState<File | null>(null);
+  const [myFiles, setMyFiles] = useState<MyFileData[]>([]);
 
   // Generate mock page thumbnails
   const generateMockPages = (pageCount: number): PDFPage[] => {
@@ -273,22 +252,87 @@ export default function RotatePages() {
     }, 2000);
   };
 
+  const handlePageCount = async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const token = localStorage.getItem("authToken");
+
+      const response = await fetch("http://localhost:8000/myfiles/count-pages/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to get page count");
+      }
+
+      const data = await response.json();
+      const count = data.pages;
+
+      const pages: PDFPage[] = Array.from({ length: count }, (_, index) => ({
+        id: `page-${index + 1}`,
+        pageNumber: index + 1,
+        selected: false,
+        thumbnail: generateRealisticPDFContent(index + 1, count),
+        rotation: 0,
+      }));
+
+      setPdfPages(pages);
+    } catch (error) {
+      console.error("Error getting page count:", error);
+      toast({
+        title: "Page count failed",
+        description: "Could not retrieve the number of pages.",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Handle My Files selection
-  const handleMyFileSelect = (file: (typeof mockMyFiles)[0]) => {
-    const mockFile = new File([], file.name, { type: "application/pdf" });
-    Object.defineProperty(mockFile, "size", {
-      value: parseFloat(file.size.replace(/[^\d.]/g, "")) * 1024 * 1024,
-    });
-
-    setUploadedFile(mockFile);
-    const pages = generateMockPages(file.pages);
-    setPdfPages(pages);
-    setShowMyFilesModal(false);
-
-    toast({
-      title: "File selected",
-      description: `${file.name} loaded with ${file.pages} pages`,
-    });
+  const handleMyFileSelect = async (file: MyFileData) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) throw new Error("Missing auth token");
+      const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to download selected file from My Files.");
+      const blob = await response.blob();
+      const realFile = new File([blob], file.name, { type: "application/pdf" });
+      setUploadedFile(realFile);
+      // Get real page count from backend
+      const formData = new FormData();
+      formData.append("file", realFile);
+      const countRes = await fetch("http://localhost:8000/myfiles/count-pages/", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      let pageCount = 1;
+      if (countRes.ok) {
+        const data = await countRes.json();
+        pageCount = data.pages;
+      }
+      setPdfPages(generateMockPages(pageCount));
+      toast({
+        title: "File selected",
+        description: `${file.name} loaded from My Files with real page count.`,
+      });
+      setShowMyFilesModal(false);
+    } catch (error) {
+      console.error("❌ Error selecting file from My Files:", error);
+      toast({
+        title: "File selection failed",
+        description: "Could not load the file from My Files.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle drag and drop
@@ -352,55 +396,120 @@ export default function RotatePages() {
       return;
     }
 
-    setIsProcessing(true);
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsProcessed(true);
-
-      const pages = parsePageRanges(pageRanges);
-      toast({
-        title: "Pages rotated successfully!",
-        description: `${pages.length} page(s) rotated and ready for ${outputOption === "download" ? "download" : "saving"}`,
-      });
-    }, 3000);
-  };
-
-  // Handle download/save
-  const handleDownload = async () => {
     if (!uploadedFile) return;
 
-    setIsDownloading(true);
+    setIsProcessing(true);
+
+    const pages = parsePageRanges(pageRanges);
+    const angle = getRotationDegrees(rotationAngle);
+
+    const formData = new FormData();
+    formData.append("file", uploadedFile);
+    formData.append("pages_to_rotate", JSON.stringify(pages));
+    formData.append("rotation_angle", angle.toString());
+
     try {
-      const filename = `rotated_${uploadedFile.name.replace(".pdf", "")}_${new Date().toISOString().split("T")[0]}.pdf`;
-      await realFileDownload("rotate", filename);
+      const response = await fetch("http://localhost:8000/basic/rotate/", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("authToken") || ""}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to rotate PDF");
+      }
+
+      const blob = await response.blob();
+      const filename = `rotated_${uploadedFile.name}`;
+      const file = new File([blob], filename, { type: "application/pdf" });
+
+      setIsProcessed(true);
+      setPdfPages([]); // Reset preview
+      setUploadedFile(file); // setăm noul fișier
+      setResultFile(file); // dacă ai deja această variabilă în state
+
+      toast({
+        title: "Rotation successful!",
+        description: `${pages.length} page(s) rotated and saved to memory.`,
+      });
     } catch (error) {
-      console.error("❌ Rotate download error:", error);
+      console.error("❌ Rotation error:", error);
+      toast({
+        title: "Rotation failed",
+        description: "Could not rotate pages.",
+        variant: "destructive",
+      });
     } finally {
-      setIsDownloading(false);
+      setIsProcessing(false);
     }
   };
 
-  const handleSaveToMyFiles = () => {
-    toast({
-      title: "Saved to My Files",
-      description: "Your rotated PDF has been saved to My Files",
-    });
+  // Handle download/save
+  const handleDownload = () => {
+    if (!uploadedFile) {
+      toast({
+        title: "No file available",
+        description: "You must first rotate a PDF before downloading.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const url = URL.createObjectURL(uploadedFile);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = uploadedFile.name || "rotated_file.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Download started",
+        description: "The rotated PDF file is downloading.",
+      });
+    } catch (error) {
+      console.error("❌ Download error:", error);
+      toast({
+        title: "Download failed",
+        description: "Could not download the rotated PDF.",
+        variant: "destructive",
+      });
+    }
   };
 
-  // Remove uploaded file and start over
-  const removeFile = () => {
-    setUploadedFile(null);
-    setPdfPages([]);
-    setPageRanges("");
-    setIsProcessed(false);
-    toast({
-      title: "File removed",
-      description: "You can now upload a new PDF file",
-    });
+  const handleSaveToMyFiles = async () => {
+    const token = localStorage.getItem("authToken");
+    if (!token || !resultFile) {
+      toast({
+        title: "Save Failed",
+        description: "No file available to save. Please rotate pages first.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const response = await savePDFToMyFiles(resultFile, token);
+      if (!response.ok) {
+        const error = await response.text();
+        console.error("Upload failed:", error);
+        throw new Error("Upload failed");
+      }
+      toast({
+        title: "Saved to My Files",
+        description: `${resultFile.name} has been uploaded successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Save Failed",
+        description: "Could not save the file to My Files.",
+        variant: "destructive",
+      });
+    }
   };
-
   // Copy example to input
   const copyExample = (example: string) => {
     setPageRanges(example);
@@ -410,7 +519,24 @@ export default function RotatePages() {
     });
   };
 
+  // Remove uploaded file and reset state
+  const removeFile = () => {
+    setUploadedFile(null);
+    setPdfPages([]);
+    setIsProcessed(false);
+    setPageRanges("");
+  };
+
   const validation = validatePageRanges(pageRanges);
+
+  // Fetch real My Files when modal opens
+  useEffect(() => {
+    if (showMyFilesModal) {
+      const token = localStorage.getItem("authToken");
+      if (!token) return;
+      fetchMyFiles(token).then((files) => setMyFiles(files));
+    }
+  }, [showMyFilesModal]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -926,26 +1052,29 @@ export default function RotatePages() {
               Select a PDF file from your saved documents to rotate pages
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
+            {myFiles.length === 0 ? (
+              <div className="text-center text-slate-500 py-8">No files found in My Files.</div>
+            ) : (
+              myFiles.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
+                  onClick={() => handleMyFileSelect(file)}
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-8 w-8 text-blue-500" />
+                    <div>
+                      <h3 className="font-medium text-slate-900">{file.name}</h3>
+                      <p className="text-sm text-slate-500">
+                        {file.size} • {file.pages} pages
+                      </p>
+                    </div>
                   </div>
+                  <Badge variant="outline">Select</Badge>
                 </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </DialogContent>
       </Dialog>
@@ -954,3 +1083,4 @@ export default function RotatePages() {
     </div>
   );
 }
+

@@ -109,8 +109,10 @@ interface CVData {
 // CV Generation API endpoints
 const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_API_URL || "http://localhost:8000",
-  CV_GENERATE_ENDPOINT: "/cv_generator/generate/",
-  FILE_UPLOAD_ENDPOINT: "/file_manager/free/upload/",
+  CV_GENERATE_ENDPOINT: "/api/cv/generate/",
+  FILE_UPLOAD_ENDPOINT: "/api/myfiles/base/"
+,
+
 };
 
 // BACKEND INTEGRATION: CV Generation API service
@@ -132,37 +134,40 @@ class CVGeneratorAPI {
       const formData = new FormData();
 
       // Add all CV fields to form data
-      formData.append("firstName", cvData.firstName);
-      formData.append("lastName", cvData.lastName);
+      formData.append("first_name", cvData.firstName);
+      formData.append("last_name", cvData.lastName);
       formData.append("email", cvData.email);
       formData.append("phone", cvData.phone);
-      formData.append("linkedinUrl", cvData.linkedinUrl);
-      formData.append("websiteUrl", cvData.websiteUrl);
+      formData.append("linkedin_url", cvData.linkedinUrl);
+      formData.append("website_url", cvData.websiteUrl);
       formData.append("location", cvData.location);
-      formData.append("professionalSummary", cvData.professionalSummary);
+      formData.append("professional_summary", cvData.professionalSummary);
 
       // Add profile photo if exists
       if (cvData.profilePhoto) {
-        formData.append("profilePhoto", cvData.profilePhoto);
+        formData.append("profile_photo", cvData.profilePhoto);
       }
 
       // Add arrays as JSON strings
       formData.append("skills", JSON.stringify(cvData.skills));
       formData.append("languages", JSON.stringify(cvData.languages));
-      formData.append("workExperience", JSON.stringify(cvData.workExperience));
+      formData.append("work_experience", JSON.stringify(cvData.workExperience));
       formData.append("education", JSON.stringify(cvData.education));
       formData.append("certifications", JSON.stringify(cvData.certifications));
 
       // Make API call to generate CV
+      const token = localStorage.getItem("authToken"); // 🔐 Obține tokenul JWT
+
       const response = await fetch(
         `${API_CONFIG.BASE_URL}${API_CONFIG.CV_GENERATE_ENDPOINT}`,
         {
           method: "POST",
           body: formData,
           headers: {
-            // Don't set Content-Type, let browser set it for FormData
+            Authorization: `Bearer ${token}`, // ✅ Trimite tokenul pentru autentificare
+            // ⚠️ Nu adăuga Content-Type manual pentru FormData
           },
-        },
+        }
       );
 
       if (!response.ok) {
@@ -171,11 +176,10 @@ class CVGeneratorAPI {
 
       // Return the PDF blob
       const pdfBlob = await response.blob();
+      console.log("Blob type:", pdfBlob.type);
       console.log("✅ CV generated successfully, size:", pdfBlob.size, "bytes");
       return pdfBlob;
     } catch (error) {
-      console.error("❌ CV generation API failed:", error);
-
       // FALLBACK: Create a mock CV file for development
       console.log("🔧 Using fallback CV generation...");
       const fallbackContent = `ALTech CV Generator - ${cvData.firstName} ${cvData.lastName}
@@ -239,63 +243,72 @@ Date: ${new Date().toLocaleString()}
   }
 
   static async uploadToMyFiles(
-    pdfBlob: Blob,
-    filename: string,
-  ): Promise<{ success: boolean; fileId?: string; message?: string }> {
-    console.log("📁 Uploading CV to My Files...", {
-      endpoint: `${API_CONFIG.BASE_URL}${API_CONFIG.FILE_UPLOAD_ENDPOINT}`,
-      filename,
-      size: pdfBlob.size,
+  pdfBlob: Blob,
+  __filename: string,
+): Promise<{ success: boolean; fileId?: string; message?: string }> {
+  console.log("📁 Uploading CV to My Files...", {
+    endpoint: `${API_CONFIG.BASE_URL}${API_CONFIG.FILE_UPLOAD_ENDPOINT}`,
+    __filename,
+    size: pdfBlob.size,
+  });
+
+  try {
+    // 🔁 Transformă Blob în File (Django așteaptă un "File", nu un "Blob")
+    const file = new File([pdfBlob], __filename, {
+      type: "application/pdf",
     });
 
-    try {
-      // Create form data for file upload
-      const formData = new FormData();
-      formData.append("file", pdfBlob, filename);
-      formData.append("category", "cv");
-      formData.append("description", "Generated CV document");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("filename", __filename);
+    formData.append("category", "cv");
+    formData.append("description", "Generated CV document");
 
-      // Upload to backend
-      const response = await fetch(
-        `${API_CONFIG.BASE_URL}${API_CONFIG.FILE_UPLOAD_ENDPOINT}`,
-        {
-          method: "POST",
-          body: formData,
-          headers: {
-            // Don't set Content-Type for FormData
-          },
+    const token = localStorage.getItem("authToken");
+
+    const response = await fetch(
+      `${API_CONFIG.BASE_URL}${API_CONFIG.FILE_UPLOAD_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // ❗ Nu seta manual Content-Type pentru FormData
         },
-      );
-
-      if (!response.ok) {
-        throw new Error(
-          `Upload Error: ${response.status} ${response.statusText}`,
-        );
+        body: formData,
       }
+    );
 
-      const result = await response.json();
-      console.log("✅ CV uploaded to My Files successfully:", result);
-
-      return {
-        success: true,
-        fileId: result.id || result.file_id,
-        message: "CV saved to My Files successfully!",
-      };
-    } catch (error) {
-      console.error("❌ Upload to My Files failed:", error);
-
-      // For development - simulate successful upload
-      console.log("🔧 Simulating successful upload for development...");
-      return {
-        success: true,
-        fileId: `mock-cv-${Date.now()}`,
-        message: "CV saved to My Files (development mode)!",
-      };
+    if (!response.ok) {
+      throw new Error(
+        `Upload Error: ${response.status} ${response.statusText}`,
+      );
     }
+
+    const result = await response.json();
+    console.log("✅ CV uploaded to My Files successfully:", result);
+
+    return {
+      success: true,
+      fileId: result.id || result.file_id,
+      message: "CV saved to My Files successfully!",
+    };
+  } catch (error) {
+    console.error("❌ Upload to My Files failed:", error);
+
+    // Fallback development mode
+    console.log("🔧 Simulating successful upload for development...");
+    return {
+      success: true,
+      fileId: `mock-cv-${Date.now()}`,
+      message: "CV saved to My Files (development mode)!",
+    };
   }
 }
 
+}
+
 export default function GenerateCV() {
+  const [resultFile, setResultFile] = useState<File | null>(null);
   const navigate = useNavigate();
   const { toast } = useToast();
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -411,7 +424,7 @@ export default function GenerateCV() {
     setIsGenerating(true);
 
     try {
-      const cvData = getFormData();
+      
 
       // Show progress
       toast({
@@ -422,21 +435,22 @@ export default function GenerateCV() {
       console.log("🔄 Starting CV generation process...");
 
       // BACKEND CALL: Generate CV via API
-      const pdfBlob = await CVGeneratorAPI.generateCV(cvData);
+      const pdfBlob = await CVGeneratorAPI.generateCV(getFormData());
 
       // REAL DOWNLOAD: Trigger browser download
-      const filename = `${cvData.firstName}_${cvData.lastName}_CV.pdf`;
-      const url = window.URL.createObjectURL(pdfBlob);
+      const cvFormData = getFormData();
+      const filename = `${cvFormData.firstName}_${cvFormData.lastName}_CV.pdf`;
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+      setResultFile(file); // 🔁 ca să poți salva și în My Files
+
+      const url = window.URL.createObjectURL(file);
       const link = document.createElement("a");
       link.href = url;
       link.download = filename;
-      link.style.display = "none";
-
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
 
-      // Clean up
       setTimeout(() => {
         window.URL.revokeObjectURL(url);
       }, 1000);
@@ -474,7 +488,7 @@ export default function GenerateCV() {
     setIsSaving(true);
 
     try {
-      const cvData = getFormData();
+      const cvDataToSave = getFormData();
 
       // Show progress
       toast({
@@ -485,10 +499,10 @@ export default function GenerateCV() {
       console.log("🔄 Starting CV save process...");
 
       // BACKEND CALL: Generate CV first
-      const pdfBlob = await CVGeneratorAPI.generateCV(cvData);
+      const pdfBlob = await CVGeneratorAPI.generateCV(cvDataToSave);
 
       // BACKEND CALL: Upload to My Files
-      const filename = `${cvData.firstName}_${cvData.lastName}_CV.pdf`;
+      const filename = `${cvDataToSave.firstName}_${cvDataToSave.lastName}_CV.pdf`;
       const uploadResult = await CVGeneratorAPI.uploadToMyFiles(
         pdfBlob,
         filename,
@@ -1551,3 +1565,5 @@ export default function GenerateCV() {
     </div>
   );
 }
+
+

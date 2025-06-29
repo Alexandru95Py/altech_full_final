@@ -48,6 +48,9 @@ import {
   Image,
   Info,
 } from "lucide-react";
+import { MyFileData } from "@/utils/fetchMyFiles";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
+import { UploadFromMyFiles } from "@/utils/UploadFromMyFiles";
 
 interface CompressionSettings {
   level: "low" | "medium" | "high";
@@ -93,6 +96,8 @@ export default function CompressPDF() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [resultFile, setResultFile] = useState<File | null>(null);
+
   const [isDragOver, setIsDragOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -170,6 +175,7 @@ export default function CompressPDF() {
       return;
     }
 
+
     setIsUploading(true);
 
     // Simulate upload processing
@@ -208,31 +214,164 @@ export default function CompressPDF() {
     }
   };
 
-  // Handle My Files selection
-  const handleMyFileSelect = (file: (typeof mockMyFiles)[0]) => {
-    const mockFile = new File([], file.name, { type: "application/pdf" });
-    Object.defineProperty(mockFile, "size", {
-      value: parseFloat(file.size.replace(/[^\d.]/g, "")) * 1024 * 1024,
+  const handleCompress = async () => {
+  if (!uploadedFile) {
+    toast({
+      title: "No File",
+      description: "Please upload a file first.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  setIsProcessing(true);
+
+  try {
+    const formData = new FormData();
+    const fixedUploadedFile = new File([uploadedFile], uploadedFile.name, {
+  type: uploadedFile.type || "application/pdf",
+});
+
+formData.append("file", fixedUploadedFile);
+
+    formData.append("compression_level", compressionSettings.level);
+    formData.append("retain_image_quality", String(compressionSettings.retainImageQuality));
+    formData.append("remove_metadata", String(compressionSettings.removeMetadata));
+    formData.append("replace_original", String(compressionSettings.replaceOriginal));
+
+    const token = localStorage.getItem("authToken");
+    console.log("🧪 Sending file to API:", uploadedFile);
+console.log("📦 Size:", uploadedFile?.size);
+console.log("📎 Name:", uploadedFile?.name);
+console.log("⚙️ Compression settings:", compressionSettings);
+console.log("📤 Sending compression request:");
+console.log("📄 File:", uploadedFile);
+console.log("📏 File size:", uploadedFile.size);
+console.log("📁 Type:", uploadedFile.type);
+
+
+
+    const response = await fetch("http://localhost:8000/basic/compress/api/compress/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
     });
 
-    setUploadedFile(mockFile);
+    if (!response.ok) {
+      throw new Error("Compression failed");
+    }
 
-    const estimates = calculateEstimatedCompression(
-      mockFile.size,
-      compressionSettings.level,
+    const blob = await response.blob();
+    const compressionStatus = response.headers.get("X-Compression-Status");
+
+    const compressedFile = new File(
+      [blob],
+      compressionStatus === "inefficient"
+        ? uploadedFile.name
+        : `compressed_${uploadedFile.name}`,
+      { type: "application/pdf" }
     );
-    setFileInfo({
-      originalSize: mockFile.size,
-      ...estimates,
+
+    // ✅ Setăm fișierul rezultat, dar NU descărcăm automat
+    setResultFile(compressedFile);
+    setIsProcessed(true);
+
+    toast({
+      title:
+        compressionStatus === "inefficient"
+          ? "Compresie ineficientă"
+          : "Comprimare finalizată",
+      description:
+        compressionStatus === "inefficient"
+          ? "Fișierul nu a putut fi comprimat eficient. A fost păstrat originalul."
+          : "Fișierul PDF a fost comprimat cu succes. Poți acum să-l descarci sau să-l salvezi.",
+    });
+  } catch (error) {
+    console.error("❌ Compression failed:", error);
+    toast({
+      title: "Compression Failed",
+      description: "Something went wrong during compression.",
+      variant: "destructive",
+    });
+  } finally {
+    setIsProcessing(false);
+  }
+};
+
+
+  // Handle My Files selection
+  const handleMyFileSelect = async (file: MyFileData) => {
+  try {
+    const token = localStorage.getItem("authToken");
+    if (!token) throw new Error("Missing auth token");
+
+    console.log("📥 Attempting to download file from My Files");
+    console.log("📁 Selected file ID:", file.id);
+    console.log("📄 Expected file name:", file.name);
+
+    const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     });
 
-    setShowMyFilesModal(false);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ Failed response text:", errorText);
+      throw new Error("Failed to download selected file from My Files.");
+    }
+
+    const blob = await response.blob();
+    console.log("📦 Blob size:", blob.size);
+    console.log("📦 Blob type:", blob.type);
+
+    if (blob.size === 0) {
+      toast({
+        title: "Empty File",
+        description: "Downloaded file is empty. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const fallbackName = file.name?.endsWith(".pdf") ? file.name : "downloaded.pdf";
+    const realFile = new File([blob], fallbackName, { type: "application/pdf" });
+
+    console.log("🧪 Real file loaded:");
+    console.log("📄 Name:", realFile.name);
+    console.log("📏 Size:", realFile.size);
+    console.log("📂 Type:", realFile.type);
+
+    setUploadedFile(realFile);
+    const estimates = calculateEstimatedCompression(
+  realFile.size,
+  compressionSettings.level
+);
+setFileInfo({
+  originalSize: realFile.size,
+  ...estimates,
+});
+
 
     toast({
       title: "File selected",
-      description: `${file.name} loaded for compression`,
+      description: `${realFile.name} loaded from My Files.`,
     });
-  };
+
+    setShowMyFilesModal(false);
+  } catch (error) {
+    console.error("❌ Error selecting file from My Files:", error);
+    toast({
+      title: "File selection failed",
+      description: "Could not load the file from My Files.",
+      variant: "destructive",
+    });
+  }
+};
+
 
   // Handle drag and drop
   const handleDragOver = (e: React.DragEvent) => {
@@ -261,61 +400,9 @@ export default function CompressPDF() {
   };
 
   // Handle compression
-  const handleCompress = async () => {
-  if (!uploadedFile) {
-    toast({
-      title: "No File",
-      description: "Please upload a file first.",
-      variant: "destructive",
-    });
-    return;
-  }
+ 
 
-  setIsProcessing(true);
-
-  try {
-    const formData = new FormData();
-    formData.append("file", uploadedFile);  // 🔧 PDF
-    formData.append("compression_level", compressionSettings.level);  // 🔧 low | medium | high
-
-    const token = localStorage.getItem("authToken");
-
-    const response = await fetch("http://localhost:8000/basic/compress/api/compress/", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      throw new Error("Compression failed");
-    }
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "compressed_file.pdf";
-    a.click();
-    URL.revokeObjectURL(url);
-
-    toast({
-      title: "Success",
-      description: "File compressed and downloaded successfully.",
-    });
-  } catch (error) {
-    console.error("❌ Compression failed:", error);
-    toast({
-      title: "Error",
-      description: "Failed to compress the file.",
-      variant: "destructive",
-    });
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
+  
 
   // Handle download
   const handleDownload = async () => {
@@ -335,8 +422,12 @@ export default function CompressPDF() {
     const formData = new FormData();
     formData.append("file", uploadedFile);
     formData.append("compression_level", compressionSettings.level);
+    formData.append("retain_image_quality", String(compressionSettings.retainImageQuality));
+    formData.append("remove_metadata", String(compressionSettings.removeMetadata));
+    formData.append("replace_original", String(compressionSettings.replaceOriginal));  // pentru viitor
 
     const token = localStorage.getItem("authToken");
+
     const response = await fetch("http://localhost:8000/basic/compress/api/compress/", {
       method: "POST",
       headers: {
@@ -349,21 +440,16 @@ export default function CompressPDF() {
       throw new Error("Compression failed");
     }
 
-    const data = await response.json();
-
-    // Descărcare reală a fișierului PDF din `file` primit
-    const downloadResponse = await fetch(data.file, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const blob = await downloadResponse.blob();
+    const blob = await response.blob();
     const url = window.URL.createObjectURL(blob);
+
     const a = document.createElement("a");
     a.href = url;
     a.download = `compressed_${uploadedFile.name}`;
+    document.body.appendChild(a); // 👈 necesar pt. Firefox
     a.click();
+    a.remove();
+
     window.URL.revokeObjectURL(url);
 
     toast({
@@ -384,28 +470,74 @@ export default function CompressPDF() {
 };
 
   // Handle save to My Files
-  const handleSaveToMyFiles = () => {
+   const handleSaveToMyFiles = async () => {
+  const token = localStorage.getItem("authToken");
+
+  if (!token) {
+    toast({
+      title: "Authentication Missing",
+      description: "You must be logged in to save to My Files.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  if (!resultFile) {
+    toast({
+      title: "Save Failed",
+      description: "No compressed file available to save. Please compress the PDF first.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  console.log("📤 [SAVE TO MY FILES - COMPRESS]");
+  console.log("📄 File name:", resultFile.name);
+  console.log("📦 File size:", resultFile.size);
+  console.log("📄 File type:", resultFile.type);
+
+  try {
+    const response = await savePDFToMyFiles(resultFile, token);
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("❌ Upload failed:", error);
+      throw new Error("Upload failed");
+    }
+
     toast({
       title: "Saved to My Files",
-      description: "Your compressed PDF has been saved to My Files",
+      description: `${resultFile.name} uploaded successfully.`,
     });
-  };
 
-  // Remove uploaded file and start over
-  const removeFile = () => {
+    console.log("✅ File uploaded successfully.");
+  } catch (error) {
+    console.error("❌ Save error:", error);
+    toast({
+      title: "Save Failed",
+      description: "Could not save the file to My Files.",
+      variant: "destructive",
+    });
+  }
+};
+
+  function removeFile(event: React.MouseEvent<HTMLButtonElement>): void {
+    // Implement file removal logic here
     setUploadedFile(null);
+    setResultFile(null);
     setIsProcessed(false);
     setFileInfo({
       originalSize: 0,
       estimatedCompressedSize: 0,
       estimatedReduction: 0,
     });
-    toast({
-      title: "File removed",
-      description: "You can now upload a new PDF file",
-    });
-  };
+  }
 
+// (Moved fetchMyFileAsRealFile outside the component)
+
+
+
+  // Move the return statement and JSX inside the CompressPDF function
   return (
     <div className="min-h-screen bg-slate-50">
       <Sidebar />
@@ -840,43 +972,26 @@ export default function CompressPDF() {
         </div>
       </main>
 
-      {/* My Files Modal */}
-      <Dialog open={showMyFilesModal} onOpenChange={setShowMyFilesModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Files className="h-5 w-5" />
-              Choose from My Files
-            </DialogTitle>
-            <DialogDescription>
-              Select a PDF file from your saved documents to compress
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
-
+      <UploadFromMyFiles
+        open={showMyFilesModal}
+        onClose={() => {
+          console.log("📁 MyFiles modal closed");
+          setShowMyFilesModal(false);
+        }}
+        onSelectFile={(file) => {
+          console.log("📁 Selected from MyFiles:", file);
+          toast({
+            title: "Selected file",
+            description: `${file.name} (${file.size} • ${file.pages} pages)`,
+          });
+          handleMyFileSelect({ ...file, id: file.id }); // keep id as number
+        }}
+      />
       <Footer />
     </div>
   );
 }
+
+
+
+// Move this outside the component

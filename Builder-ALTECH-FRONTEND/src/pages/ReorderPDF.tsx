@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { savePDFToMyFiles } from "@/utils/myFilesUpload";
+
 import {
   Dialog,
   DialogContent,
@@ -36,14 +38,18 @@ import {
   CheckCircle,
   Files,
 } from "lucide-react";
+import { UploadFromMyFiles } from "@/utils/UploadFromMyFiles";
+import { MyFileData } from "@/utils/fetchMyFiles";
 
 interface PDFPage {
   id: string;
   pageNumber: number;
+  selected: boolean;
+  thumbnail: string;
   originalIndex: number;
   content: string;
-  thumbnail: string;
 }
+
 
 // Mock data for My Files
 const mockMyFiles = [
@@ -84,6 +90,8 @@ export default function ReorderPDF() {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [draggedPage, setDraggedPage] = useState<string | null>(null);
+  const [resultFile, setResultFile] = useState<File | null>(null);
+
   const [zoomLevel, setZoomLevel] = useState(100);
   const [outputOption, setOutputOption] = useState<"download" | "save">(
     "download",
@@ -137,19 +145,11 @@ export default function ReorderPDF() {
     return `data:image/svg+xml;base64,${btoa(contentTypes[contentIndex])}`;
   };
 
-  // Generate mock pages
-  const generateMockPages = (pageCount: number): PDFPage[] => {
-    return Array.from({ length: pageCount }, (_, index) => ({
-      id: `page-${index + 1}`,
-      pageNumber: index + 1,
-      originalIndex: index,
-      content: `Page ${index + 1} content`,
-      thumbnail: generateRealisticPDFContent(index + 1, pageCount),
-    }));
-  };
+  
 
   // Handle file upload
-  const handleFileUpload = (files: FileList | null) => {
+  const handleFileUpload = async (files: FileList | null) => {
+
     if (!files || files.length === 0) return;
 
     const file = files[0];
@@ -176,37 +176,67 @@ export default function ReorderPDF() {
 
     setIsUploading(true);
 
-    // Simulate upload and page generation
-    setTimeout(() => {
-      setUploadedFile(file);
-      const mockPageCount = Math.floor(Math.random() * 15) + 8; // 8-23 pages
-      const pages = generateMockPages(mockPageCount);
-      setPdfPages(pages);
-      setIsUploading(false);
+try {
+  setUploadedFile(file);
+  await handlePageCount(file); // 📥 Apel real către backend
+  setIsUploading(false);
 
-      toast({
-        title: "File uploaded successfully",
-        description: `${file.name} loaded with ${mockPageCount} pages`,
-      });
-    }, 2000);
-  };
+  toast({
+    title: "File uploaded successfully",
+    description: `${file.name} loaded with real page count`,
+  });
+} catch (error) {
+  console.error("Upload or page count error:", error);
+  toast({
+    title: "Error",
+    description: "Failed to upload file or get page count.",
+    variant: "destructive",
+  });
+  setIsUploading(false);
+}
+}
+
 
   // Handle My Files selection
-  const handleMyFileSelect = (file: (typeof mockMyFiles)[0]) => {
-    const mockFile = new File([], file.name, { type: "application/pdf" });
-    Object.defineProperty(mockFile, "size", {
-      value: parseFloat(file.size.replace(/[^\d.]/g, "")) * 1024 * 1024,
-    });
-
-    setUploadedFile(mockFile);
-    const pages = generateMockPages(file.pages);
-    setPdfPages(pages);
-    setShowMyFilesModal(false);
-
-    toast({
-      title: "File selected",
-      description: `${file.name} loaded with ${file.pages} pages`,
-    });
+  const handleMyFileSelect = async (file: MyFileData) => {
+    try {
+      const token = localStorage.getItem("authToken");
+      if (!token) throw new Error("Missing auth token");
+  
+      const response = await fetch(`http://localhost:8000/myfiles/base/${file.id}/download/`, {
+  
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+  
+      if (!response.ok) {
+        throw new Error("Failed to download selected file from My Files.");
+      }
+  
+      const blob = await response.blob();
+      const realFile = new File([blob], file.name, { type: "application/pdf" });
+  
+      setUploadedFile(realFile);
+      setPdfPages([]);
+  
+      await handlePageCount(realFile);
+  
+      toast({
+        title: "File selected",
+        description: `${file.name} loaded from My Files with real page count.`,
+      });
+  
+      setShowMyFilesModal(false);
+    } catch (error) {
+      console.error("❌ Error selecting file from My Files:", error);
+      toast({
+        title: "File selection failed",
+        description: "Could not load the file from My Files.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Handle drag and drop
@@ -284,20 +314,52 @@ export default function ReorderPDF() {
   };
 
   // Apply changes
-  const handleApplyChanges = () => {
-    setIsProcessing(true);
+  const handleApplyChanges = async () => {
+  if (!uploadedFile) return;
 
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsProcessed(true);
+  setIsProcessing(true);
 
-      toast({
-        title: "Page order updated successfully!",
-        description: "Your PDF has been reordered according to your changes.",
-      });
-    }, 3000);
-  };
+  const formData = new FormData();
+  formData.append("file", uploadedFile);
+  formData.append(
+    "new_order",
+    JSON.stringify(pdfPages.map((p) => p.originalIndex + 1))
+  );
+
+  try {
+    const response = await fetch("http://localhost:8000/basic/reorder/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) throw new Error("Reorder failed");
+
+    const blob = await response.blob();
+    const fileName = uploadedFile.name.replace(".pdf", "_reordered.pdf");
+    const reorderedFile = new File([blob], fileName, { type: "application/pdf" });
+
+    setResultFile(reorderedFile);  // ✅ esențial pentru salvare
+    setIsProcessed(true);          // ✅ comută UI-ul
+    setIsProcessing(false);
+
+    toast({
+      title: "Reorder successful",
+      description: "Your pages have been rearranged.",
+    });
+  } catch (error) {
+    console.error("❌ Error during reorder:", error);
+    setIsProcessing(false);
+    toast({
+      title: "Error",
+      description: "Could not reorder pages.",
+      variant: "destructive",
+    });
+  }
+};
+
 
 // Handle download/save
 const handleDownload = async () => {
@@ -307,7 +369,7 @@ const handleDownload = async () => {
   formData.append("file", uploadedFile);
   formData.append(
     "new_order",
-    JSON.stringify(pdfPages.map((p) => p.pageNumber)), // pagina reală ordonată
+    JSON.stringify(pdfPages.map((p) => p.originalIndex + 1)) // ⚠️ Folosești originalIndex + 1 (dacă originalIndex începe de la 0)
   );
 
   try {
@@ -324,11 +386,19 @@ const handleDownload = async () => {
     }
 
     const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
 
+    // 🔁 Creează fișierul pentru salvare ulterioară
+    const fileName = uploadedFile.name.replace(".pdf", "_reordered.pdf");
+    const reorderedFile = new File([blob], fileName, { type: "application/pdf" });
+
+    // ✅ Salvează în stare ca să poți face „Save to My Files” mai târziu
+    setResultFile(reorderedFile);
+
+    // 🔽 Declanșează descărcarea în browser
+    const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = uploadedFile.name.replace(".pdf", "_reordered.pdf");
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -339,6 +409,7 @@ const handleDownload = async () => {
       description: "Your reordered PDF is being downloaded.",
     });
   } catch (error) {
+    console.error("❌ Download failed:", error);
     toast({
       title: "Download failed",
       description: "There was an error downloading your PDF.",
@@ -347,23 +418,103 @@ const handleDownload = async () => {
   }
 };
 
-  const handleSaveToMyFiles = () => {
+
+const handlePageCount = async (file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = localStorage.getItem("authToken");
+
+    const response = await fetch("http://localhost:8000/myfiles/count-pages/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to get page count");
+    }
+
+    const data = await response.json();
+    const count = data.pages;
+
+    const pages: PDFPage[] = Array.from({ length: count }, (_, index) => ({
+      id: `page-${index + 1}`,
+      pageNumber: index + 1,
+      originalIndex: index,
+      content: `Page ${index + 1}`,
+      thumbnail: "", // vei completa ulterior dacă vrei preview real
+      selected: false,
+    }));
+
+    setPdfPages(pages);
+  } catch (error) {
+    console.error("Error getting page count:", error);
+    toast({
+      title: "Page count failed",
+      description: "Could not retrieve number of pages from backend.",
+      variant: "destructive",
+    });
+  }
+};
+
+
+  const handleSaveToMyFiles = async () => {
+  const token = localStorage.getItem("authToken");
+
+  if (!resultFile) {
+    toast({
+      title: "Save Failed",
+      description: "No reordered PDF available to save. Please reorder the pages first.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  // 🔍 DEBUG INFO
+  console.log("📤 [SAVE TO MY FILES - REORDER]");
+  console.log("Name:", resultFile.name);
+  console.log("Size:", resultFile.size);
+  console.log("Type:", resultFile.type);
+
+  try {
+    const response = await savePDFToMyFiles(resultFile, token);
+
+    if (!response.ok) {
+      const error = await response.text();
+      console.error("❌ Upload failed:", error);
+      throw new Error("Upload failed");
+    }
+
     toast({
       title: "Saved to My Files",
-      description: "Your reordered PDF has been saved to My Files",
+      description: `${resultFile.name} uploaded successfully.`,
     });
-  };
 
-  // Remove uploaded file and start over
+    console.log("✅ [SAVE TO MY FILES - REORDER] File uploaded successfully.");
+  } catch (error) {
+    console.error("❌ [SAVE TO MY FILES - REORDER] Upload error:", error);
+    toast({
+      title: "Save Failed",
+      description: "Could not save the reordered PDF to My Files.",
+      variant: "destructive",
+    });
+  }
+};
+
+
+
+  // Clears the uploaded file and resets state
   const removeFile = () => {
     setUploadedFile(null);
     setPdfPages([]);
     setIsProcessed(false);
-    toast({
-      title: "File removed",
-      description: "You can now upload a new PDF file",
-    });
+    setResultFile(null);
   };
+
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -729,41 +880,21 @@ const handleDownload = async () => {
         </div>
       </main>
 
-      {/* My Files Modal */}
-      <Dialog open={showMyFilesModal} onOpenChange={setShowMyFilesModal}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Files className="h-5 w-5" />
-              Choose from My Files
-            </DialogTitle>
-            <DialogDescription>
-              Select a PDF file from your saved documents to reorder pages
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {mockMyFiles.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors cursor-pointer"
-                onClick={() => handleMyFileSelect(file)}
-              >
-                <div className="flex items-center gap-3">
-                  <FileText className="h-8 w-8 text-red-500" />
-                  <div>
-                    <h3 className="font-medium text-slate-900">{file.name}</h3>
-                    <p className="text-sm text-slate-500">
-                      {file.size} • {file.pages} pages
-                    </p>
-                  </div>
-                </div>
-                <Badge variant="outline">Select</Badge>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+       <UploadFromMyFiles
+              open={showMyFilesModal}
+              onClose={() => {
+                console.log("📁 MyFiles modal closed");
+                setShowMyFilesModal(false);
+              }}
+              onSelectFile={(file) => {
+                console.log("📁 Selected from MyFiles:", file);
+                toast({
+                  title: "Selected file",
+                  description: `${file.name} (${file.size} • ${file.pages} pages)`,
+                });
+                handleMyFileSelect({ ...file, id: file.id }); // keep id as number
+              }}
+            />
 
       <Footer />
     </div>
