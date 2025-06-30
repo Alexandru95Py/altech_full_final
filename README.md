@@ -24,13 +24,13 @@
 ## 📸 Quick Demo
 
 ### 🏠 Dashboard & Navigation
-![Dashboard](media/dashboard.gif)
+![Overview](media/overview.gif)
 
 ### ✍️ Fill & Sign a Document
-![Fill & Sign](media/fill_and_sign.gif)
+![Fill & Sign](media/signature.gif)
 
 ### 🔐 Protect PDF with Password
-![Protect Document](media/protect_document.gif)
+![Protect Document](media/password.gif)
 
 ### 📤 Extract Specific Pages
 ![Extract](media/extract.gif)
@@ -111,7 +111,7 @@ If you like the project:
 For questions, collaborations, or feedback:
 
 *GitHub*: (https://github.com/Alexandru95Py)  
-*Email*: alexandru.goga18@gmail.com (optional)  
+*Email*: alexandru.goga18@gmail.com 
 *Website*: Coming soon!
 
 ---

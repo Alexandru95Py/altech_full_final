@@ -32,8 +32,7 @@ dist-ssr/
 **/migrations/
 !**/migrations/__init__.py
 
-# Media/User uploads
-media/
+
 
 # Test/Backup/Log files
 htmlcov/

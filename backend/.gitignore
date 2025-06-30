@@ -18,7 +18,7 @@ ENV/
 !**/migrations/__init__.py
 
 # Media uploads (dacă sunt generate de utilizatori)
-media/
+
 
 # Pytest / Test reports
 htmlcov/
