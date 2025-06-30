@@ -1,0 +1,50 @@
+# Python
+*.pyc
+__pycache__/
+
+# SQLite
+db.sqlite3
+
+# Virtual env
+venv/
+ENV/
+.env/
+
+# VSCode
+.vscode/
+
+# Migrations (opțional — păstrează doar dacă ai backup extern sau CI/CD configurat)
+**/migrations/
+!**/migrations/__init__.py
+
+# Media uploads (dacă sunt generate de utilizatori)
+media/
+
+# Pytest / Test reports
+htmlcov/
+*.cover
+.coverage
+*.log
+.pytest_cache/
+
+# IDE
+*.idea/
+*.swp
+
+# Mac OS
+.DS_Store
+
+# Backup files
+*.bak
+
+
+.env
+*.env
+
+
+.DS_Store
+Thumbs.db
+
+
+node_modules/
+dist/

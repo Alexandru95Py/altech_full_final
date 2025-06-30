@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h1 { font-size: 24px; margin-bottom: 5px; }
+    .section { margin-bottom: 20px; }
+    .photo { float: right; width: 120px; }
+  </style>
+</head>
+<body>
+  {% if photo %}
+    <img src="{{ photo }}" class="photo" />
+  {% endif %}
+  <h1>{{ full_name }}</h1>
+
+  <div class="section">
+    <strong>Despre mine:</strong>
+    <p>{{ about }}</p>
+  </div>
+
+  <div class="section">
+    <strong>Educație:</strong>
+    <p>{{ education }}</p>
+  </div>
+
+  <div class="section">
+    <strong>Experiență profesională:</strong>
+    <p>{{ experience }}</p>
+  </div>
+
+  <div class="section">
+    <strong>Competențe:</strong>
+    <p>{{ skills }}</p>
+  </div>
+
+  <div class="section">
+    <strong>Limbi străine:</strong>
+    <p>{{ languages }}</p>
+  </div>
+
+  <div class="section">
+    <strong>Link-uri utile:</strong>
+    <p>{{ links }}</p>
+  </div>
+</body>
+</html>
