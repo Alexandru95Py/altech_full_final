@@ -35,6 +35,10 @@
 ### 📤 Extract Specific Pages
 ![Extract](media/extract.gif)
 
+### 🔄 Convert Documents (PDF ⇄ DOCX / PPTX)
+![Convert](media/convert.gif)
+
+
 ---
 
 ## 🔧 Tech Stack
