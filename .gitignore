@@ -45,3 +45,6 @@ htmlcov/
 
 # OS/Backup
 Thumbs.db
+
+# Exclude old frontend folder
+Builder-ALTECH-FRONTEND/
