@@ -77,9 +77,9 @@ def convert_pdf_to_pptx(uploaded_file):
 
 
 def convert_pdf_to_images(uploaded_file, image_format="jpg"):
-    import tempfile
     from PIL import Image
-    import os
+    import io
+    import zipfile
 
     print("🔍 Începem conversia PDF →", image_format.upper())
 
@@ -94,11 +94,9 @@ def convert_pdf_to_images(uploaded_file, image_format="jpg"):
                 page = doc.load_page(page_num)
                 pix = page.get_pixmap(dpi=150)
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
-                    temp_path = tmp_file.name
-                    pix.save(temp_path)
-
-                image = Image.open(temp_path)
+                # Convertim imaginea în PNG și o citim direct din memorie
+                img_bytes = pix.tobytes("png")
+                image = Image.open(io.BytesIO(img_bytes))
                 image.load()  # forțăm încărcarea completă în memorie
 
                 if image_format == "jpg":
@@ -112,15 +110,13 @@ def convert_pdf_to_images(uploaded_file, image_format="jpg"):
                 zip_file.writestr(filename, final_img.read())
                 print(f"✅ Adăugată în arhivă: {filename}")
 
-                image.close()  # 👈 închidem imaginea
-                os.remove(temp_path)  # 🔐 acum putem șterge
-
             except Exception as e:
                 print(f"❌ Eroare la pagina {page_num + 1}: {e}")
 
     zip_buffer.seek(0)
     print("✅ Arhiva ZIP finalizată")
     return zip_buffer, f"converted_images_{image_format}.zip", "application/zip"
+
 
 def convert_pdf_to_format(uploaded_file, target_format):
     if target_format == "txt":

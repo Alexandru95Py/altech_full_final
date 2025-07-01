@@ -389,7 +389,7 @@ export default function SplitPDF() {
  const handleDownload = async () => {
   try {
     const token = localStorage.getItem("authToken");
-    const formData = new FormData();
+    if (!token) throw new Error("No auth token");
 
     if (!uploadedFile) {
       toast({
@@ -400,21 +400,48 @@ export default function SplitPDF() {
       return;
     }
 
-    const selectedPages = pdfPages.filter((page) => page.selected).map((page) => page.pageNumber);
+    const formData = new FormData();
+    formData.append("file", uploadedFile);
+
+    let selectedPages: number[] = [];
+
+    if (splitMethod === "selection") {
+      selectedPages = pdfPages
+        .filter((page) => page.selected)
+        .map((page) => page.pageNumber);
+    } else if (splitMethod === "range") {
+      const parts = pageRanges.split(",").map((p) => p.trim());
+      parts.forEach((part) => {
+        if (part.includes("-")) {
+          const [start, end] = part.split("-").map(Number);
+          if (!isNaN(start) && !isNaN(end)) {
+            for (let i = start; i <= end; i++) {
+              selectedPages.push(i);
+            }
+          }
+        } else {
+          const page = Number(part);
+          if (!isNaN(page)) selectedPages.push(page);
+        }
+      });
+    } else if (splitMethod === "evenly") {
+      const splitSize = parseInt(splitEvery);
+      if (!isNaN(splitSize) && splitSize > 0) {
+        for (let i = 1; i <= pdfPages.length; i++) {
+          selectedPages.push(i);
+        }
+      }
+    }
 
     if (selectedPages.length === 0) {
       toast({
         title: "No pages selected",
-        description: "Please extract pages first before downloading.",
+        description: "Please select or define pages before downloading.",
         variant: "destructive",
       });
       return;
     }
 
-    // ✅ Adaugă fișierul o singură dată
-    formData.append("file", uploadedFile);
-
-    // ✅ Adaugă paginile selectate
     selectedPages.forEach((page) => {
       formData.append("pages", page.toString());
     });
@@ -432,9 +459,8 @@ export default function SplitPDF() {
     }
 
     const blob = await response.blob();
-    const file = new File([blob], "extracted_pages.pdf", { type: "application/pdf" });
-
     const url = URL.createObjectURL(blob);
+
     const a = document.createElement("a");
     a.href = url;
     a.download = "extracted_pages.pdf";
@@ -456,8 +482,6 @@ export default function SplitPDF() {
     });
   }
 };
-
-
 
 
 // (Removed duplicate and out-of-scope code that referenced 'blob')

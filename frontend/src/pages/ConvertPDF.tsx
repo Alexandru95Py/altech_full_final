@@ -261,21 +261,31 @@ export default function ConvertPDF() {
       console.error("❌ Server Error Response:", errorText);
       throw new Error(`Server responded with ${response.status}`);
     }
+const blob = await response.blob();
 
-    const blob = await response.blob();
+const contentDisposition = response.headers.get("Content-Disposition");
+const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
+const filename = filenameMatch?.[1] || `converted.${selectedFormat}`;
 
-    const contentDisposition = response.headers.get("Content-Disposition");
-    const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
-    const filename = filenameMatch?.[1] || `converted.${selectedFormat}`;
+const contentType =
+  response.headers.get("Content-Type") || "application/octet-stream";
 
-    const contentType =
-      response.headers.get("Content-Type") || "application/octet-stream";
+
 
     // Setăm rezultatul în state pentru download sau salvare ulterioară
     setConvertedBlob(blob);
     setConvertedFilename(filename);
     setConvertedContentType(contentType);
     setIsProcessed(true);
+    
+        
+    // 🔍 DEBUGURI
+    console.log("📦 Blob primit:", blob);
+    console.log("📁 Filename extras:", filename);
+    console.log("🧾 Content-Type extras:", contentType);
+
+ 
+
 
     toast({
       title: "Conversion completed!",
@@ -306,16 +316,31 @@ export default function ConvertPDF() {
     return;
   }
 
+  // 🔍 DEBUG
+  console.log("⬇️ Pregătim descărcarea...");
+  console.log("📦 Blob size:", convertedBlob.size);
+  console.log("📁 Filename:", convertedFilename);
+  console.log("🧾 Content-Type:", convertedContentType);
+
+  // 🔄 Forțăm extensia corectă dacă tipul e ZIP
+  let finalFilename = convertedFilename;
+  if (convertedContentType === "application/zip" && !convertedFilename.endsWith(".zip")) {
+    finalFilename = convertedFilename.replace(/\.[^/.]+$/, "") + ".zip";
+    console.warn(`⚠️ Redenumire forțată: ${convertedFilename} → ${finalFilename}`);
+  }
+
   setIsDownloading(true);
   try {
     const url = window.URL.createObjectURL(convertedBlob);
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", convertedFilename);
+    link.setAttribute("download", finalFilename);
     document.body.appendChild(link);
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+
+    console.log("✅ Descărcare inițiată cu succes.");
   } catch (error) {
     console.error("❌ Convert download error:", error);
     toast({
@@ -327,6 +352,7 @@ export default function ConvertPDF() {
     setIsDownloading(false);
   }
 };
+
 
 const handleSaveToMyFiles = async () => {
   const token = localStorage.getItem("authToken");
