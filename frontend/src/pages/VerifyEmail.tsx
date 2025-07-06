@@ -24,7 +24,7 @@ export default function VerifyEmail() {
         toast.success("Email verified! You can now log in.");
         navigate("/auth");
       } else {
-        toast.error(response.message || "Verification failed.");
+        toast.error(response.error || "Verification failed.");
       }
     } catch (error) {
       toast.error("Verification failed. Please check your code and try again.");

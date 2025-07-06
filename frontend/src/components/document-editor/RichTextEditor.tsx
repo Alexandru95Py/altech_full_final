@@ -11,6 +11,7 @@ import TableRow from "@tiptap/extension-table-row";
 import TableHeader from "@tiptap/extension-table-header";
 import TableCell from "@tiptap/extension-table-cell";
 import { cn } from "@/lib/utils";
+import { Node, mergeAttributes } from "@tiptap/core";
 
 interface RichTextEditorProps {
   content?: string;
@@ -316,3 +317,107 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 };
 
 export default RichTextEditor;
+
+const ResizableImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      width: {
+        default: "auto",
+        parseHTML: (element) => element.getAttribute("width") || "auto",
+        renderHTML: (attributes) => {
+          return { width: attributes.width };
+        },
+      },
+      height: {
+        default: "auto",
+        parseHTML: (element) => element.getAttribute("height") || "auto",
+        renderHTML: (attributes) => {
+          return { height: attributes.height };
+        },
+      },
+    };
+  },
+  addNodeView() {
+    return ({ node, getPos, editor }) => {
+      const img = document.createElement("img");
+      img.src = node.attrs.src;
+      img.style.width = node.attrs.width || "auto";
+      img.style.height = node.attrs.height || "auto";
+      img.style.maxWidth = "100%";
+      img.style.borderRadius = "6px";
+      img.style.boxShadow = "0 1px 3px 0 rgb(0 0 0 / 0.1)";
+      img.draggable = true;
+      img.className = "tiptap-resizable-image";
+
+      // Add resize handles
+      const wrapper = document.createElement("span");
+      wrapper.contentEditable = "false";
+      wrapper.style.display = "inline-block";
+      wrapper.style.position = "relative";
+      wrapper.appendChild(img);
+
+      const handle = document.createElement("span");
+      handle.style.position = "absolute";
+      handle.style.right = "0";
+      handle.style.bottom = "0";
+      handle.style.width = "16px";
+      handle.style.height = "16px";
+      handle.style.background = "#3b82f6";
+      handle.style.borderRadius = "50%";
+      handle.style.cursor = "nwse-resize";
+      handle.style.zIndex = "10";
+      wrapper.appendChild(handle);
+
+      let startX = 0;
+      let startY = 0;
+      let startWidth = 0;
+      let startHeight = 0;
+
+      handle.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = img.offsetWidth;
+        startHeight = img.offsetHeight;
+        document.body.style.userSelect = "none";
+        const onMouseMove = (moveEvent) => {
+          const diffX = moveEvent.clientX - startX;
+          const diffY = moveEvent.clientY - startY;
+          const newWidth = Math.max(40, startWidth + diffX);
+          const newHeight = Math.max(40, startHeight + diffY);
+          img.style.width = newWidth + "px";
+          img.style.height = newHeight + "px";
+        };
+        const onMouseUp = (upEvent) => {
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+          document.body.style.userSelect = "";
+          const diffX = upEvent.clientX - startX;
+          const diffY = upEvent.clientY - startY;
+          const newWidth = Math.max(40, startWidth + diffX);
+          const newHeight = Math.max(40, startHeight + diffY);
+          editor
+            .chain()
+            .command(({ tr }) => {
+              tr.setNodeMarkup(getPos(), undefined, {
+                ...node.attrs,
+                width: newWidth + "px",
+                height: newHeight + "px",
+              });
+              return true;
+            })
+            .run();
+        };
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+
+      return {
+        dom: wrapper,
+        contentDOM: null,
+      };
+    };
+  },
+});

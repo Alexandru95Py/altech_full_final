@@ -97,7 +97,7 @@ export default function MyFiles() {
 
   interface ApiResponse {
     success: boolean;
-    data: FileListResponse | DownloadResponse;
+    data?: FileListResponse | DownloadResponse;
     message?: string;
     error?: string;
   }

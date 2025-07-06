@@ -15,6 +15,9 @@ export interface PDFElement {
   fontFamily?: string;
   signatureData?: string;
   signatureType?: "draw" | "upload" | "type";
+  // For absolute positioning mapping
+  xRatio?: number;
+  yRatio?: number;
 }
 
 interface InteractiveElementProps {
@@ -255,65 +258,134 @@ export const InteractiveElement: React.FC<InteractiveElementProps> = ({
     element,
     containerBounds,
     onUpdate,
-  ]);
+]);
 
-  // Render content based on element type
-  const renderContent = () => {
-    const style = {
-      fontSize: element.fontSize ? `${element.fontSize}px` : "14px",
-      fontFamily: element.fontFamily || "Arial, sans-serif",
-    };
-
-    switch (element.type) {
-      case "text":
-        return (
-          <div
-            className="w-full h-full flex items-center justify-center text-black border border-dashed border-gray-400 bg-white/90 px-2 py-1"
-            style={style}
-          >
-            {element.content || "Text"}
-          </div>
-        );
-
-      case "signature":
-      case "initial":
-        if (element.signatureData) {
-          return (
-            <img
-              src={element.signatureData}
-              alt={element.type}
-              className="w-full h-full object-contain"
-              draggable={false}
-            />
-          );
-        }
-        return (
-          <div
-            className="w-full h-full flex items-center justify-center text-black border border-dashed border-gray-400 bg-white/90 px-2 py-1"
-            style={style}
-          >
-            {element.content || element.type}
-          </div>
-        );
-
-      case "date":
-        return (
-          <div
-            className="w-full h-full flex items-center justify-center text-black border border-dashed border-gray-400 bg-white/90 px-2 py-1"
-            style={style}
-          >
-            {element.content || new Date().toLocaleDateString()}
-          </div>
-        );
-
-      default:
-        return (
-          <div className="w-full h-full flex items-center justify-center text-gray-500">
-            {element.content}
-          </div>
-        );
-    }
+// Helper to render the content based on element type
+const renderContent = () => {
+  const style: React.CSSProperties = {
+    fontSize: element.fontSize || 16,
+    fontFamily: element.fontFamily || "inherit",
+    width: "100%",
+    height: "100%",
+    userSelect: isSelected ? "text" : "none",
+    pointerEvents: (isDragging || isResizing || isRotating) ? "none" : "auto",
   };
+
+  switch (element.type) {
+    case "text": {
+      // Show placeholder visually, but not as the value
+      const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
+        const value = (e.target as HTMLElement).innerText;
+        // DEBUG: Log input value
+        console.log('[DEBUG] onInput value:', value);
+        onUpdate(element.id, { content: value });
+      };
+
+
+      const handleFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+        const el = e.target as HTMLElement;
+        // DEBUG: Log focus event
+        console.log('[DEBUG] onFocus, innerText:', el.innerText);
+        if (el.innerText === "New text") {
+          el.innerText = "";
+        }
+      };
+
+
+      const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        // DEBUG: Log keydown event
+        console.log('[DEBUG] onKeyDown:', e.key);
+        if (e.key === "Enter") {
+          e.preventDefault();
+        }
+      };
+
+      if (isSelected) {
+        return (
+          <div
+            ref={elementRef}
+            contentEditable
+            suppressContentEditableWarning
+            autoFocus
+            spellCheck={true}
+            style={style}
+            className="w-full h-full rounded bg-white/90 border border-dashed border-gray-400 text-black focus:ring-2 focus:ring-blue-400 focus:border-blue-400 resize-none box-border px-2 py-1 outline-none flex items-center justify-center relative"
+            onInput={handleInput}
+            onFocus={handleFocus}
+            onBlur={e => {
+              const value = (e.target as HTMLElement).innerText;
+              // DEBUG: Log blur event
+              console.log('[DEBUG] onBlur, value:', value);
+              onUpdate(element.id, { content: value });
+            }}
+            onClick={e => {
+              console.log('[DEBUG] onClick editable box');
+              e.stopPropagation();
+            }}
+            onKeyDown={handleKeyDown}
+            tabIndex={0}
+            // Set the initial value for contentEditable
+            dangerouslySetInnerHTML={{ __html: element.content || '' }}
+          />
+        );
+      }
+
+
+      return (
+        <div
+          className="w-full h-full flex items-center justify-center text-black border border-dashed border-gray-400 bg-white/90 px-2 py-1 cursor-text box-border"
+          style={style}
+          onClick={e => {
+            e.stopPropagation();
+            onSelect(element.id);
+          }}
+        >
+          {element.content || <span className="text-gray-400">New text</span>}
+        </div>
+      );
+    }
+
+    case "signature":
+    case "initial":
+      if (element.signatureData) {
+        return (
+          <img
+            src={element.signatureData}
+            alt={element.type}
+            className="w-full h-full object-contain"
+            draggable={false}
+          />
+        );
+      }
+      return (
+        <div
+          className="w-full h-full flex items-center justify-center text-black border border-dashed border-gray-400 bg-white/90 px-2 py-1"
+          style={style}
+        >
+          {element.content || element.type}
+        </div>
+      );
+
+    case "date":
+      return (
+        <div
+          className="w-full h-full flex items-center justify-center text-black border border-dashed border-gray-400 bg-white/90 px-2 py-1"
+          style={style}
+        >
+          {element.content || new Date().toLocaleDateString()}
+        </div>
+      );
+
+    default:
+      return (
+        <div className="w-full h-full flex items-center justify-center text-gray-500">
+          {element.content}
+        </div>
+      );
+  }
+};
+
+
 
   return (
     <div

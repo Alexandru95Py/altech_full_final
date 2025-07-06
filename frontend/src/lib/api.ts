@@ -394,6 +394,20 @@ const createAPIInterface = () => {
     verifyEmailCode: (email: string, code: string) =>
       apiClient.post("/auth/verify-email/", { email, code }),
 
+    // Forgot Password endpoints
+    forgotPassword: (email: string) =>
+      apiClient.post("/auth/forgot-password/", { email }),
+
+    verifyResetCode: (email: string, code: string) =>
+      apiClient.post("/auth/verify-reset-code/", { email, code }),
+
+    resetPassword: (email: string, code: string, newPassword: string) =>
+      apiClient.post("/auth/reset-password/", { 
+        email, 
+        code, 
+        new_password: newPassword 
+      }),
+
     // File Management endpoints
     uploadFile: (file: File, onProgress?: (progress: number) => void) =>
       apiClient.uploadFile("/api/myfiles/base/", file, onProgress),
@@ -541,6 +555,17 @@ export const downloadFileFromUrl = async (
 // Enhanced error handling for Django responses
 export const handleAPIError = (error: unknown): string => {
   if (error instanceof APIError) {
+    // Handle specific Django authentication errors
+    const message = error.message.toLowerCase();
+    if (message.includes("invalid email or password") || 
+        message.includes("invalid credentials")) {
+      return "Incorrect email or password. Please check your credentials.";
+    }
+    if (message.includes("user account is disabled") || 
+        message.includes("account is disabled")) {
+      return "Your account has been disabled. Please contact support.";
+    }
+
     switch (error.errorCode) {
       case "FILE_TOO_LARGE":
         return "File size exceeds the maximum allowed limit.";
@@ -563,6 +588,16 @@ export const handleAPIError = (error: unknown): string => {
       default:
         return error.message || "An unexpected error occurred.";
     }
+  }
+
+  // Handle regular JavaScript errors
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    if (message.includes("invalid email or password") || 
+        message.includes("invalid credentials")) {
+      return "Incorrect email or password. Please check your credentials.";
+    }
+    return error.message;
   }
 
   return "An unexpected error occurred. Please try again.";

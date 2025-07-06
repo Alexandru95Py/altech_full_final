@@ -12,6 +12,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import {
   Eye,
@@ -29,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { djangoAPI, handleAPIError, apiClient } from "@/lib/api";
+import { CutePopup } from "@/components/CutePopup";
 
 // Corrected AuthResponse type and destructuring logic
 interface AuthResponse {
@@ -75,6 +83,15 @@ export default function Auth() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [termsAgreed, setTermsAgreed] = useState(false);
   const [showTermsError, setShowTermsError] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
+  const [forgotPasswordStep, setForgotPasswordStep] = useState(1); // 1: email, 2: code, 3: new password
+  const [forgotPasswordCode, setForgotPasswordCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showCutePopup, setShowCutePopup] = useState(false);
+  const [cutePopupMessage, setCutePopupMessage] = useState("");
 
   // Password validation
   const passwordRequirements: PasswordRequirement[] = [
@@ -148,11 +165,10 @@ export default function Auth() {
       }
     } catch (error) {
       console.error("Login failed:", error);
-      toast({
-        title: "Login failed",
-        description: handleAPIError(error),
-        variant: "destructive",
-      });
+      
+      // Show cute popup instead of harsh red toast
+      setCutePopupMessage("Your email address or password is incorrect. Please try again! 😊");
+      setShowCutePopup(true);
     } finally {
       setIsLoading(false);
     }
@@ -194,6 +210,8 @@ export default function Auth() {
         toast({
           title: "Registration failed",
           description: handleAPIError(response),
+          variant: "destructive",
+          duration: 4000,
         });
       }
     } catch (error) {
@@ -202,10 +220,167 @@ export default function Auth() {
         title: "Registration failed",
         description: handleAPIError(error),
         variant: "destructive",
+        duration: 4000,
       });
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Handle forgot password
+  const handleForgotPassword = async () => {
+    if (forgotPasswordStep === 1) {
+      // Step 1: Send reset code to email
+      if (!forgotPasswordEmail || !isEmailValid(forgotPasswordEmail)) {
+        toast({
+          title: "Invalid email",
+          description: "Please enter a valid email address.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const response = await djangoAPI.forgotPassword(forgotPasswordEmail);
+        
+        if (response.success) {
+          toast({
+            title: "Reset code sent",
+            description: `A 6-digit verification code has been sent to ${forgotPasswordEmail}`,
+          });
+          
+          setForgotPasswordStep(2);
+        } else {
+          toast({
+            title: "Failed to send reset code",
+            description: handleAPIError(response),
+            variant: "destructive",
+            duration: 4000,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to send reset code:", error);
+        toast({
+          title: "Failed to send reset code",
+          description: handleAPIError(error),
+          variant: "destructive",
+          duration: 4000,
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (forgotPasswordStep === 2) {
+      // Step 2: Verify code
+      if (!forgotPasswordCode || forgotPasswordCode.length !== 6) {
+        toast({
+          title: "Invalid code",
+          description: "Please enter the 6-digit code from your email.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const response = await djangoAPI.verifyResetCode(forgotPasswordEmail, forgotPasswordCode);
+        
+        if (response.success) {
+          toast({
+            title: "Code verified",
+            description: "Please enter your new password.",
+          });
+          
+          setForgotPasswordStep(3);
+        } else {
+          toast({
+            title: "Invalid code",
+            description: handleAPIError(response),
+            variant: "destructive",
+            duration: 4000,
+          });
+        }
+      } catch (error) {
+        console.error("Code verification failed:", error);
+        toast({
+          title: "Invalid code",
+          description: handleAPIError(error),
+          variant: "destructive",
+          duration: 4000,
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    } else if (forgotPasswordStep === 3) {
+      // Step 3: Set new password
+      if (!newPassword || newPassword.length < 8) {
+        toast({
+          title: "Password too short",
+          description: "Password must be at least 8 characters long.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (newPassword !== confirmNewPassword) {
+        toast({
+          title: "Passwords don't match",
+          description: "Please make sure both passwords match.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsLoading(true);
+
+      try {
+        const response = await djangoAPI.resetPassword(forgotPasswordEmail, forgotPasswordCode, newPassword);
+        
+        if (response.success) {
+          toast({
+            title: "Password reset successful",
+            description: "Your password has been updated. You can now sign in with your new password.",
+          });
+          
+          // Reset all states and close modal
+          setShowForgotPasswordModal(false);
+          setForgotPasswordStep(1);
+          setForgotPasswordEmail("");
+          setForgotPasswordCode("");
+          setNewPassword("");
+          setConfirmNewPassword("");
+        } else {
+          toast({
+            title: "Password reset failed",
+            description: handleAPIError(response),
+            variant: "destructive",
+            duration: 4000,
+          });
+        }
+      } catch (error) {
+        console.error("Password reset failed:", error);
+        toast({
+          title: "Password reset failed",
+          description: handleAPIError(error),
+          variant: "destructive",
+          duration: 4000,
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Reset forgot password modal when closing
+  const closeForgotPasswordModal = () => {
+    setShowForgotPasswordModal(false);
+    setForgotPasswordStep(1);
+    setForgotPasswordEmail("");
+    setForgotPasswordCode("");
+    setNewPassword("");
+    setConfirmNewPassword("");
   };
 
   // Check for existing authentication on component mount
@@ -325,6 +500,19 @@ export default function Auth() {
                       "Sign In"
                     )}
                   </Button>
+
+                  {/* Forgot Password Button */}
+                  <div className="text-center">
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-sm text-slate-600 hover:text-slate-900 p-0 h-auto font-normal"
+                      onClick={() => setShowForgotPasswordModal(true)}
+                      disabled={isLoading}
+                    >
+                      Forgot password?
+                    </Button>
+                  </div>
                 </div>
               </TabsContent>
 
@@ -569,6 +757,184 @@ export default function Auth() {
             Back to Home
           </Button>
         </div>
+
+        {/* Forgot Password Modal */}
+        <Dialog open={showForgotPasswordModal} onOpenChange={closeForgotPasswordModal}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {forgotPasswordStep === 1 && "Reset your password"}
+                {forgotPasswordStep === 2 && "Enter verification code"}
+                {forgotPasswordStep === 3 && "Set new password"}
+              </DialogTitle>
+              <DialogDescription>
+                {forgotPasswordStep === 1 && "Enter your email address and we'll send you a verification code."}
+                {forgotPasswordStep === 2 && `Enter the 6-digit code sent to ${forgotPasswordEmail}`}
+                {forgotPasswordStep === 3 && "Enter your new password below."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* Step 1: Email Input */}
+              {forgotPasswordStep === 1 && (
+                <div className="space-y-2">
+                  <Label htmlFor="forgotPasswordEmail">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                    <Input
+                      id="forgotPasswordEmail"
+                      type="email"
+                      placeholder="Enter your email"
+                      className="pl-10"
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      disabled={isLoading}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleForgotPassword();
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Code Input */}
+              {forgotPasswordStep === 2 && (
+                <div className="space-y-2">
+                  <Label htmlFor="forgotPasswordCode">Verification Code</Label>
+                  <Input
+                    id="forgotPasswordCode"
+                    type="text"
+                    placeholder="Enter 6-digit code"
+                    maxLength={6}
+                    className="text-center text-lg tracking-widest"
+                    value={forgotPasswordCode}
+                    onChange={(e) => setForgotPasswordCode(e.target.value.replace(/\D/g, ''))}
+                    disabled={isLoading}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && forgotPasswordCode.length === 6) {
+                        handleForgotPassword();
+                      }
+                    }}
+                  />
+                  <p className="text-sm text-slate-500 text-center">
+                    Didn't receive the code?{" "}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="p-0 h-auto text-sm"
+                      onClick={() => setForgotPasswordStep(1)}
+                      disabled={isLoading}
+                    >
+                      Resend
+                    </Button>
+                  </p>
+                </div>
+              )}
+
+              {/* Step 3: New Password Input */}
+              {forgotPasswordStep === 3 && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="newPassword">New Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                      <Input
+                        id="newPassword"
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="Enter new password"
+                        className="pl-10 pr-10"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        disabled={isLoading}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        disabled={isLoading}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4 text-slate-500" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-slate-500" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmNewPassword">Confirm New Password</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
+                      <Input
+                        id="confirmNewPassword"
+                        type={showNewPassword ? "text" : "password"}
+                        placeholder="Confirm new password"
+                        className="pl-10"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        disabled={isLoading}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            handleForgotPassword();
+                          }
+                        }}
+                      />
+                    </div>
+                    {confirmNewPassword && newPassword !== confirmNewPassword && (
+                      <p className="text-sm text-red-500">
+                        Passwords do not match
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  variant="outline"
+                  onClick={closeForgotPasswordModal}
+                  disabled={isLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleForgotPassword}
+                  disabled={isLoading || 
+                    (forgotPasswordStep === 1 && !forgotPasswordEmail) ||
+                    (forgotPasswordStep === 2 && forgotPasswordCode.length !== 6) ||
+                    (forgotPasswordStep === 3 && (!newPassword || !confirmNewPassword || newPassword !== confirmNewPassword))
+                  }
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {forgotPasswordStep === 1 && "Sending..."}
+                      {forgotPasswordStep === 2 && "Verifying..."}
+                      {forgotPasswordStep === 3 && "Updating..."}
+                    </>
+                  ) : (
+                    <>
+                      {forgotPasswordStep === 1 && "Send verification code"}
+                      {forgotPasswordStep === 2 && "Verify code"}
+                      {forgotPasswordStep === 3 && "Update password"}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Cute Popup for Login Errors */}
+        <CutePopup
+          isVisible={showCutePopup}
+          message={cutePopupMessage}
+          onClose={() => setShowCutePopup(false)}
+          duration={3000}
+        />
       </div>
     </div>
   );

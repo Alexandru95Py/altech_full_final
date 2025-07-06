@@ -34,6 +34,28 @@ class EmailVerificationCode(models.Model):
         print(f"[DEBUG] now: {now}, created: {created}, expired: {expired}")
         return expired
 
+class PasswordResetCode(models.Model):
+    from django.conf import settings
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="password_reset"
+    )
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        now = timezone.now().replace(microsecond=0)
+
+        if is_naive(self.created_at):
+            created = make_aware(self.created_at).replace(microsecond=0)
+        else:
+            created = self.created_at.replace(microsecond=0)
+
+        expired = now > created + timedelta(minutes=10)
+        return expired
+
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:

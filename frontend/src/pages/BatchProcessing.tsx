@@ -43,8 +43,10 @@ import {
 import { toast } from "sonner";
 
 interface UploadedFile {
+  filename: string;
   id: string;
   file: File;
+  name: string; // Added property for file name
   size: string;
   status: "pending" | "processing" | "completed" | "error";
   progress: number;
@@ -72,10 +74,10 @@ interface ProcessingOptions {
   rotationAngle?: "90" | "-90" | "180";
 
   // Page operations
-  pageNumbers?: string;
+  pageNumbers?: "string";
 
   // Protection options
-  password?: string;
+  password?: "string";
 
   // Extract options
   extractType?: "first" | "last" | "custom" | "range";
@@ -131,29 +133,24 @@ const processingTypes = [
 
 const helpSteps = [
   {
-    step: 1,
     title: "Upload Files",
-    description: "Upload multiple PDF files (max 100MB total)",
+    content: "Upload multiple PDF files (max 100MB total)",
   },
   {
-    step: 2,
     title: "Choose Action",
-    description: "Select the processing operation to apply",
+    content: "Select the processing operation to apply",
   },
   {
-    step: 3,
     title: "Configure Options",
-    description: "Set specific parameters for your chosen action",
+    content: "Set specific parameters for your chosen action",
   },
   {
-    step: 4,
     title: "Start Processing",
-    description: "Begin batch processing all files",
+    content: "Begin batch processing all files",
   },
   {
-    step: 5,
     title: "Download Results",
-    description: "Download individual files or all as ZIP",
+    content: "Download individual files or all as ZIP",
   },
 ];
 
@@ -210,6 +207,8 @@ export default function BatchProcessing() {
       const newFiles: UploadedFile[] = pdfFiles.map((file) => ({
         id: generateFileId(),
         file,
+        name: file.name, // Set the file name
+        filename: file.name, // Add the required filename property
         size: formatFileSize(file.size),
         status: "pending",
         progress: 0,
@@ -330,11 +329,13 @@ export default function BatchProcessing() {
       const file = uploadedFiles.find((f) => f.id === fileId);
       if (!file) return;
 
-      const filename = `batch_processed_${file.name.replace(".pdf", "")}_${new Date().toISOString().split("T")[0]}.pdf`;
+      const originalName = file.name || "converted_file.pdf";
+      const extension = originalName.split(".").pop();
+      const baseName = originalName.replace(/\.[^/.]+$/, "");
+      const filename = `batch_processed_${baseName}_${new Date().toISOString().split("T")[0]}.${extension}`;
 
       console.log("🔽 Starting reliable batch download:", filename);
 
-      // Use the real file download system
       await realFileDownload("batch", filename);
     } catch (error) {
       console.error("❌ Batch download error:", error);

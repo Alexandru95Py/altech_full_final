@@ -8,7 +8,7 @@ from create_pdf.views.pro_view import (
     FillAndSignPDFView
 )
 
-app_name = 'create_pdf'
+app_name = 'pro'
 
 urlpatterns = [
     path('advanced-table/', pro_view.CreateAdvancedTablePDFView.as_view(), name='advanced_table_pdf'),

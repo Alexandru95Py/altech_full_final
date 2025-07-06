@@ -9,6 +9,10 @@ interface PDFCanvasProps {
   onElementsChange: (elements: PDFElement[]) => void;
   onElementAdd: (element: Omit<PDFElement, "id">) => void;
   className?: string;
+  pageNumber?: number; // Use pageNumber for clarity
+  onToolReset?: () => void;
+  onRequestSignatureAt?: (x: number, y: number, type: 'signature' | 'initial') => void;
+  scale?: number;
 }
 
 /**
@@ -21,6 +25,10 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
   onElementsChange,
   onElementAdd,
   className,
+  pageNumber = 1,
+  onToolReset,
+  onRequestSignatureAt,
+  scale = 1,
 }) => {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(
     null,
@@ -46,24 +54,29 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
   // Handle clicking on the PDF canvas to add elements
   const handleCanvasClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!activeTool || activeTool === "delete") return;
-
-      // Don't add elements if clicking on an existing element
+      if (!activeTool) return;
       if (e.target !== e.currentTarget) return;
+      if (activeTool === "delete") return;
 
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
-
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+      const xRatio = x / rect.width;
+      const yRatio = y / rect.height;
+
+      // For signature/initial, delegate to parent for modal
+      if (activeTool === "signature" || activeTool === "initial") {
+        if (typeof onRequestSignatureAt === 'function') {
+          onRequestSignatureAt(x, y, activeTool);
+        }
+        if (onToolReset) onToolReset();
+        return;
+      }
 
       // Default dimensions for different element types
       const getDefaultSize = (type: string) => {
         switch (type) {
-          case "signature":
-            return { width: 150, height: 50 };
-          case "initial":
-            return { width: 50, height: 50 };
           case "text":
             return { width: 100, height: 30 };
           case "date":
@@ -75,28 +88,31 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
 
       const size = getDefaultSize(activeTool);
 
-      // Create new element
+      let content = "";
+      if (activeTool === "text") {
+        content = "New text";
+      } else if (activeTool === "date") {
+        content = new Date().toLocaleDateString();
+      }
+
       const newElement: Omit<PDFElement, "id"> = {
         type: activeTool as PDFElement["type"],
         x: Math.max(0, Math.min(x - size.width / 2, rect.width - size.width)),
-        y: Math.max(
-          0,
-          Math.min(y - size.height / 2, rect.height - size.height),
-        ),
+        y: Math.max(0, Math.min(y - size.height / 2, rect.height - size.height)),
+        xRatio,
+        yRatio,
         width: size.width,
         height: size.height,
         rotation: 0,
-        content:
-          activeTool === "date"
-            ? new Date().toLocaleDateString()
-            : `New ${activeTool}`,
+        content: "New text",
         fontSize: 14,
         fontFamily: "Arial, sans-serif",
       };
 
       onElementAdd(newElement);
+      if (onToolReset) onToolReset();
     },
-    [activeTool, onElementAdd],
+    [activeTool, onElementAdd, onToolReset, onRequestSignatureAt],
   );
 
   // Handle element updates
@@ -110,11 +126,6 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
     [elements, onElementsChange],
   );
 
-  // Handle element selection
-  const handleElementSelect = useCallback((id: string) => {
-    setSelectedElementId(id);
-  }, []);
-
   // Handle element deletion
   const handleElementDelete = useCallback(
     (id: string) => {
@@ -123,6 +134,23 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
       setSelectedElementId(null);
     },
     [elements, onElementsChange],
+  );
+
+  // Handle element selection and delete tool
+  const handleElementSelect = useCallback(
+    (id: string) => {
+      if (activeTool === "delete") {
+        handleElementDelete(id);
+        // Reset tool after delete
+        if (typeof window !== "undefined") {
+          const event = new CustomEvent("pdfcanvas-tool-reset");
+          window.dispatchEvent(event);
+        }
+      } else {
+        setSelectedElementId(id);
+      }
+    },
+    [activeTool, handleElementDelete],
   );
 
   // Clear selection when clicking on canvas
@@ -134,6 +162,9 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
     },
     [],
   );
+
+  // Keyboard shortcuts
+  // (Removed: window.setActiveTool and tool reset event listener, now handled via onToolReset prop)
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -213,11 +244,20 @@ export const PDFCanvas: React.FC<PDFCanvasProps> = ({
     >
       {/* PDF Background */}
       {pdfUrl ? (
-        <iframe
-          src={pdfUrl}
-          className="w-full h-full border-0 pointer-events-none"
-          title="PDF Preview"
-        />
+        <>
+  <iframe
+    key={pageNumber}
+    src={`${pdfUrl}#page=${pageNumber}`}
+    className="w-full h-full border-0 pointer-events-none absolute top-0 left-0"
+    title={`PDF Preview Page ${pageNumber}`}
+  />
+  <div
+    className="absolute top-0 left-0 w-full h-full"
+    onClick={handleCanvasClick}
+    onClickCapture={handleCanvasClickCapture}
+  />
+</>
+
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-500">
           <div className="text-center">

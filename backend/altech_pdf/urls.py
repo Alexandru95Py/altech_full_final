@@ -34,9 +34,9 @@ urlpatterns = [
     
 
 
-    path('api/create/free/', include('create_pdf.urls.urls_free')),
-    path('api/create/pro/', include('create_pdf.urls.urls_pro', namespace='create_pdf')),
-    path('api/create/ai/', include('create_pdf.urls.urls_ai')),
+    path('api/create/free/', include('create_pdf.urls.urls_free', namespace='free')),
+    path('api/create/pro/', include('create_pdf.urls.urls_pro', namespace='pro')),
+    path('api/create/ai/', include('create_pdf.urls.urls_ai', namespace='ai')),
     
     path('free/', include(('ProtectDocument.free_plan.urls', 'free'), namespace='free')),
     

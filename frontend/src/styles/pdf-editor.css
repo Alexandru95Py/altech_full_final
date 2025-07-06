@@ -13,6 +13,15 @@
   z-index: 20;
 }
 
+.pdf-editable-area {
+  pointer-events: none;
+}
+
+.pdf-active-page-area {
+  pointer-events: auto;
+}
+
+
 /* Resize Handles */
 .resize-handle {
   position: absolute;

@@ -211,7 +211,7 @@ export default function Profile() {
   const handleDownloadData = () => {
     // Export user's data including profile information, files, and settings
     const userData = {
-      profile: userProfile,
+      profile: formData,
       files: [], // Would come from API
       settings: {
         autoSave: true,

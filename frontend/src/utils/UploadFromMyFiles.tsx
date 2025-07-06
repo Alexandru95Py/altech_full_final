@@ -63,13 +63,13 @@ export const UploadFromMyFiles = ({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" aria-describedby="myfiles-dialog-description">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Files className="h-5 w-5" />
             Upload from My Files
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription id="myfiles-dialog-description">
             Select a previously saved PDF file to use in this tool.
           </DialogDescription>
         </DialogHeader>

@@ -7,6 +7,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import ValidationError
 from myfiles.utils.file_validation import validate_pdf_limits
 from rest_framework_simplejwt.authentication import JWTAuthentication
+import mimetypes
 
 class MyFilesListCreateView(generics.ListCreateAPIView):
     serializer_class = PDFFileSerializer
@@ -61,6 +62,14 @@ class MyFilesDownloadView(generics.GenericAPIView):
         except PDFFile.DoesNotExist:
             raise Http404("Fișier inexistent.")
 
-        response = FileResponse(pdf.file.open('rb'), content_type='application/pdf')
+        # 🎯 Detectăm tipul MIME din extensia fișierului
+        mime_type, _ = mimetypes.guess_type(pdf.filename)
+        if not mime_type:
+            mime_type = 'application/octet-stream'  # fallback sigur
+
+        print(f"📥 [DEBUG DOWNLOAD] Fișier: {pdf.filename}")
+        print(f"🧾 [DEBUG DOWNLOAD] MIME type detectat: {mime_type}")
+
+        response = FileResponse(pdf.file.open('rb'), content_type=mime_type)
         response['Content-Disposition'] = f'attachment; filename="{pdf.filename}"'
         return response
